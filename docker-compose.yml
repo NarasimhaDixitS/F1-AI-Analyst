@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: prod
+    container_name: f1-backend-compose
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - fastf1_cache_dev:/app/cache
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: f1-frontend-compose
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  fastf1_cache_dev:

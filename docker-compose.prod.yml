@@ -1,0 +1,7 @@
+services:
+  backend:
+    container_name: f1-backend-compose-prod
+
+  frontend:
+    container_name: f1-frontend-compose-prod
+    

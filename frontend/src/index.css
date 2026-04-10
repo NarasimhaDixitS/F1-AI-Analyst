@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@theme {
+/* @theme {
   --color-f1-red: #e10600;
   --color-f1-dark: #15151e;
   --color-f1-black: #0b0b10;
@@ -8,7 +8,7 @@
 
 body {
   @apply bg-neutral-950 text-white;
-}
+} */
 
 * {
   scrollbar-width: thin;
