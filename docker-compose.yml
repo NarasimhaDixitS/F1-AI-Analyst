@@ -21,6 +21,8 @@ services:
       args:
         VITE_API_BASE_URL: http://localhost:8000
     container_name: f1-frontend-compose
+    ports:
+      - "8080:80"
     depends_on:
       - backend
     restart: unless-stopped

@@ -56,3 +56,9 @@ cache/
 backend/cache/
 *.sqlite
 *.ff1pkl
+
+# -----------------------------
+# AWS_DOMAIN_BOOTSTRAP_GUIDE
+# -----------------------------
+AWS_DOMAIN_BOOTSTRAP_GUIDE.md
+
