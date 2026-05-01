@@ -22,7 +22,10 @@ import DeltaChart from './components/DeltaChart';
 import TrackMap from './components/TrackMap';
 import ResultsTable from './components/ResultsTable';
 import InsightsLab from './components/InsightsLab';
+import ThrottleLabsLogo from './components/brand/ThrottleLabsLogo';
+import RaceIdentityLayer, { RaceIdentityPill } from './components/race/RaceIdentityLayer';
 import { getCompoundColor, getModeAccent, getTeamAccentStyle } from './utils/raceTheme';
+import { getRaceIdentityFromSelection } from './lib/raceIdentity';
 
 const DRIVER_OPTIONS = [
   'VER', 'HAM', 'NOR', 'PIA', 'LEC', 'SAI', 'RUS', 'PER', 'ALO', 'STR',
@@ -474,16 +477,34 @@ export default function App() {
     driver2: 'HAM',
   });
 
-  const promptChips = [
-    'Why was VER faster than HAM in Silverstone 2024 qualifying?',
-    'Compare NOR vs PIA in Brazil 2024 sprint',
-    'Who had better braking consistency in Monaco 2024 race?',
-  ];
-
   const currentMode = result?.mode || structured.mode || 'head_to_head';
   const modeAccent = getModeAccent(currentMode);
   const summaryLabel = getModeSummaryLabel(currentMode);
   const briefing = getBriefingText(result);
+  const identityDrivers = useMemo(() => {
+    if (currentMode !== 'head_to_head' && currentMode !== 'telemetry') return [];
+    return [result?.request?.driver1 || structured.driver1, result?.request?.driver2 || structured.driver2].filter(Boolean);
+  }, [currentMode, result?.request?.driver1, result?.request?.driver2, structured.driver1, structured.driver2]);
+
+  const raceIdentity = useMemo(
+    () =>
+      getRaceIdentityFromSelection({
+        year: result?.request?.year ?? structured.year,
+        raceName: result?.request?.race || structured.race,
+        sessionName: result?.request?.session || structured.session,
+        mode: currentMode,
+        drivers: identityDrivers,
+        request: result?.request || {},
+      }),
+    [
+      result?.request,
+      structured.year,
+      structured.race,
+      structured.session,
+      currentMode,
+      identityDrivers,
+    ],
+  );
 
   const hasDualResults = useMemo(() => {
     const raceRows = Array.isArray(result?.race_results) ? result.race_results : [];
@@ -568,51 +589,49 @@ export default function App() {
   );
 
   const renderHeadToHead = () => (
-    <div className="grid gap-4 xl:grid-cols-[320px,1fr]">
-      <div className="space-y-4 xl:sticky xl:top-[118px] xl:z-20 xl:h-fit xl:self-start xl:rounded-lg xl:bg-[rgba(13,17,26,0.88)] xl:p-1 xl:backdrop-blur-sm">
+    <div className="space-y-4">
+      <nav className="rc-card flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg p-2">
+        {[
+          { id: 'insights', label: 'Insights', icon: <Info size={14} /> },
+          { id: 'track', label: 'Track Map', icon: <Map size={14} /> },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setHeadToHeadTab(tab.id)}
+            className={`rc-focus flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-xs uppercase tracking-wider ${
+              headToHeadTab === tab.id ? 'text-white' : 'text-[var(--rc-text-secondary)] hover:text-[var(--rc-text-primary)]'
+            }`}
+            style={headToHeadTab === tab.id ? { background: 'rgba(34, 211, 238, 0.18)', border: '1px solid rgba(34, 211, 238, 0.45)' } : undefined}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="rc-card rounded-lg px-3 py-2 text-[11px] text-[var(--rc-text-secondary)]">
+        Head-to-Head now focuses on direct driver comparison only. Use dedicated modes for full <span className="text-[var(--rc-text-primary)]">Results</span>, <span className="text-[var(--rc-text-primary)]">Telemetry</span>, and <span className="text-[var(--rc-text-primary)]">Race Overview</span> details.
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
         <SpeedTrapPanel speedTrap={result?.speed_trap} />
         <TyreStrategyPanel tyreStrategy={result?.tyre_strategy} />
       </div>
 
-      <div className="space-y-4 xl:relative xl:z-10">
-        <nav className="rc-card flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg p-2">
-          {[
-            { id: 'insights', label: 'Insights', icon: <Info size={14} /> },
-            { id: 'track', label: 'Track Map', icon: <Map size={14} /> },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setHeadToHeadTab(tab.id)}
-              className={`rc-focus flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-xs uppercase tracking-wider ${
-                headToHeadTab === tab.id ? 'text-white' : 'text-[var(--rc-text-secondary)] hover:text-[var(--rc-text-primary)]'
-              }`}
-              style={headToHeadTab === tab.id ? { background: 'rgba(34, 211, 238, 0.18)', border: '1px solid rgba(34, 211, 238, 0.45)' } : undefined}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      {headToHeadTab === 'insights' && (
+        <InsightsLab
+          data={result?.data}
+          headToHead={result?.head_to_head}
+          comparisonOnly
+        />
+      )}
 
-        <div className="rc-card rounded-lg px-3 py-2 text-[11px] text-[var(--rc-text-secondary)]">
-          Head-to-Head now focuses on direct driver comparison only. Use dedicated modes for full <span className="text-[var(--rc-text-primary)]">Results</span>, <span className="text-[var(--rc-text-primary)]">Telemetry</span>, and <span className="text-[var(--rc-text-primary)]">Race Overview</span> details.
-        </div>
-
-        {headToHeadTab === 'insights' && (
-          <InsightsLab
-            data={result?.data}
-            headToHead={result?.head_to_head}
-            comparisonOnly
-          />
-        )}
-
-        {headToHeadTab === 'track' && (
-          <ChartErrorBoundary>
-            <TrackMap data={result?.data} />
-          </ChartErrorBoundary>
-        )}
-      </div>
+      {headToHeadTab === 'track' && (
+        <ChartErrorBoundary>
+          <TrackMap data={result?.data} />
+        </ChartErrorBoundary>
+      )}
     </div>
   );
 
@@ -703,47 +722,23 @@ export default function App() {
       {!hasSearched ? (
         <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-5 px-4 py-8">
           <div className="mb-2 flex flex-col items-center gap-2 text-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-[var(--rc-red)] text-2xl font-black italic">F1</div>
-              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">F1 AI Race Analyst</h1>
-            </div>
+            <ThrottleLabsLogo variant="hero" showDomain className="mb-1" />
             <p className="max-w-2xl text-sm text-[var(--rc-text-secondary)]">Race Control Neon briefing console for natural-language and structured Formula 1 analysis.</p>
           </div>
 
           <StructuredControls values={structured} setValues={setStructured} onAnalyze={handleStructuredAnalyze} loading={loading} />
-
-          <div className="rc-card rc-card-elevated w-full max-w-5xl rounded-lg p-3 md:p-4">
-            <p className="mb-2 text-xs uppercase tracking-widest text-[var(--rc-cyan)]">AI Command Console</p>
-            <CompactNLP
-              query={query}
-              setQuery={setQuery}
-              loading={loading}
-              onSubmit={handleNaturalLanguageSearch}
-              placeholder="Why was VER faster than HAM in Silverstone 2024 qualifying?"
-            />
-          </div>
-
-          <div className="mt-1 flex w-full max-w-5xl flex-wrap gap-2">
-            {promptChips.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setQuery(tag)}
-                className="rc-focus rounded-full border border-[var(--rc-border)] bg-[rgba(13,17,26,0.82)] px-2.5 py-1 text-[11px] text-[var(--rc-text-secondary)] transition hover:border-[var(--rc-cyan)]/50 hover:text-[var(--rc-text-primary)]"
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         </div>
       ) : (
         <>
           <header className="rc-toolbar sticky top-0 z-50 px-3 py-3">
             <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--rc-red)] text-lg font-black italic">F1</div>
-                  <p className="text-sm font-bold uppercase tracking-wider" style={{ color: modeAccent.color }}>Race Analyst</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                  <ThrottleLabsLogo variant="compact" showDomain className="rc-toolbar-logo" />
+                  <span className="rc-toolbar-brand-divider" aria-hidden="true">|</span>
+                  <p className="rc-toolbar-brand-subtitle" style={{ color: modeAccent.color }}>
+                    F1 Race Analyst
+                  </p>
                 </div>
                 <button
                   onClick={() => setShowToolbarNlp((v) => !v)}
@@ -752,6 +747,8 @@ export default function App() {
                   {showToolbarNlp ? 'Hide query' : 'Ask'}
                 </button>
               </div>
+
+              <RaceIdentityPill identity={raceIdentity} />
 
               <StructuredControls
                 values={structured}
@@ -781,11 +778,19 @@ export default function App() {
 
           {loading && !result ? (
             <div className="mx-auto w-full max-w-[1600px] space-y-3 p-4">
+              <div className="rc-card inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-[var(--rc-text-secondary)]">
+                <ThrottleLabsLogo variant="compact" />
+                <Loader2 className="animate-spin text-[var(--rc-cyan)]" size={14} />
+                Preparing race analysis workspace...
+              </div>
               <div className="rc-skeleton h-10 rounded-md" />
               <div className="rc-skeleton h-80 rounded-xl" />
             </div>
           ) : result ? (
-            <main className="mx-auto w-full max-w-[1600px] p-4">{renderMainContent()}</main>
+            <section className="rc-workspace-shell mx-auto w-full max-w-[1600px] p-4">
+              <RaceIdentityLayer identity={raceIdentity} showPill={false} />
+              <main className="rc-workspace-content">{renderMainContent()}</main>
+            </section>
           ) : (
             <div className="mx-auto w-full max-w-7xl p-6 text-[var(--rc-text-secondary)]">Search to load analysis.</div>
           )}
