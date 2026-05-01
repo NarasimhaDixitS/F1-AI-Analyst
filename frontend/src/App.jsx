@@ -1,13 +1,68 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
-import { Search, Activity, Map, Timer, Info, AlertCircle, Loader2, Gauge, CarFront } from 'lucide-react';
+import {
+  Activity,
+  AlertCircle,
+  Award,
+  CarFront,
+  CloudSun,
+  Flag,
+  Gauge,
+  Info,
+  Loader2,
+  Map,
+  Medal,
+  Search,
+  Swords,
+  Timer,
+  Trophy,
+} from 'lucide-react';
 
-// Import our custom components
 import TelemetryChart from './components/TelemetryChart';
 import DeltaChart from './components/DeltaChart';
 import TrackMap from './components/TrackMap';
 import ResultsTable from './components/ResultsTable';
 import InsightsLab from './components/InsightsLab';
+
+const DRIVER_OPTIONS = [
+  'VER', 'HAM', 'NOR', 'PIA', 'LEC', 'SAI', 'RUS', 'PER', 'ALO', 'STR',
+  'GAS', 'OCO', 'ALB', 'TSU', 'HUL', 'MAG', 'BOT', 'ZHO', 'RIC',
+];
+
+const RACE_OPTIONS = [
+  { label: 'Bahrain', value: 'Bahrain Grand Prix' },
+  { label: 'Saudi Arabian', value: 'Saudi Arabian Grand Prix' },
+  { label: 'Australian', value: 'Australian Grand Prix' },
+  { label: 'Japanese', value: 'Japanese Grand Prix' },
+  { label: 'Chinese', value: 'Chinese Grand Prix' },
+  { label: 'Miami', value: 'Miami Grand Prix' },
+  { label: 'Emilia Romagna', value: 'Emilia Romagna Grand Prix' },
+  { label: 'Monaco', value: 'Monaco Grand Prix' },
+  { label: 'Canadian', value: 'Canadian Grand Prix' },
+  { label: 'Spanish', value: 'Spanish Grand Prix' },
+  { label: 'Austrian', value: 'Austrian Grand Prix' },
+  { label: 'British', value: 'British Grand Prix' },
+  { label: 'Hungarian', value: 'Hungarian Grand Prix' },
+  { label: 'Belgian', value: 'Belgian Grand Prix' },
+  { label: 'Dutch', value: 'Dutch Grand Prix' },
+  { label: 'Italian', value: 'Italian Grand Prix' },
+  { label: 'Azerbaijan', value: 'Azerbaijan Grand Prix' },
+  { label: 'Singapore', value: 'Singapore Grand Prix' },
+  { label: 'United States', value: 'United States Grand Prix' },
+  { label: 'Mexico City', value: 'Mexico City Grand Prix' },
+  { label: 'Sao Paulo', value: 'São Paulo Grand Prix' },
+  { label: 'Las Vegas', value: 'Las Vegas Grand Prix' },
+  { label: 'Qatar', value: 'Qatar Grand Prix' },
+  { label: 'Abu Dhabi', value: 'Abu Dhabi Grand Prix' },
+];
+
+const ANALYSIS_MODES = [
+  { label: 'Race Overview', value: 'race_overview' },
+  { label: 'Head to Head', value: 'head_to_head' },
+  { label: 'Strategy', value: 'strategy' },
+  { label: 'Telemetry', value: 'telemetry' },
+  { label: 'Results', value: 'results' },
+];
 
 class ChartErrorBoundary extends React.Component {
   constructor(props) {
@@ -27,7 +82,7 @@ class ChartErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-400">
-          Unable to render chart for this response. Try a more specific query (driver1 vs driver2, race, year, session).
+          Unable to render chart for this response.
         </div>
       );
     }
@@ -42,86 +97,54 @@ function downsampleSeries(values = [], maxPoints = 2500) {
 }
 
 function normalizeResultPayload(payload) {
-  if (!payload?.data?.driver1?.telemetry || !payload?.data?.driver2?.telemetry) {
-    return payload;
-  }
+  if (!payload?.data?.driver1?.telemetry || !payload?.data?.driver2?.telemetry) return payload;
 
   const t1 = payload.data.driver1.telemetry;
   const t2 = payload.data.driver2.telemetry;
 
-  const normalized = {
+  return {
     ...payload,
     data: {
       ...payload.data,
-      driver1: { ...payload.data.driver1 },
-      driver2: { ...payload.data.driver2 },
+      driver1: {
+        ...payload.data.driver1,
+        telemetry: {
+          ...t1,
+          distance: downsampleSeries(t1.distance),
+          speed: downsampleSeries(t1.speed),
+          throttle: downsampleSeries(t1.throttle),
+          brake: downsampleSeries(t1.brake),
+          x: downsampleSeries(t1.x),
+          y: downsampleSeries(t1.y),
+        },
+      },
+      driver2: {
+        ...payload.data.driver2,
+        telemetry: {
+          ...t2,
+          distance: downsampleSeries(t2.distance),
+          speed: downsampleSeries(t2.speed),
+          throttle: downsampleSeries(t2.throttle),
+          brake: downsampleSeries(t2.brake),
+          x: downsampleSeries(t2.x),
+          y: downsampleSeries(t2.y),
+        },
+      },
     },
   };
-
-  normalized.data.driver1.telemetry = {
-    ...t1,
-    distance: downsampleSeries(t1.distance),
-    speed: downsampleSeries(t1.speed),
-    throttle: downsampleSeries(t1.throttle),
-    brake: downsampleSeries(t1.brake),
-    x: downsampleSeries(t1.x),
-    y: downsampleSeries(t1.y),
-  };
-
-  normalized.data.driver2.telemetry = {
-    ...t2,
-    distance: downsampleSeries(t2.distance),
-    speed: downsampleSeries(t2.speed),
-    throttle: downsampleSeries(t2.throttle),
-    brake: downsampleSeries(t2.brake),
-    x: downsampleSeries(t2.x),
-    y: downsampleSeries(t2.y),
-  };
-
-  return normalized;
 }
 
 function getBriefingText(result) {
-  const explanation = typeof result?.explanation === 'string' ? result.explanation : '';
-  if (!explanation) return 'Telemetry comparison loaded.';
-
-  // Clean older technical fallback/provider error messages if they appear
-  return explanation
-    .replace(/AI narrative is in fallback mode because.*$/i, 'AI analysis is currently unavailable, so this briefing uses deterministic session data.')
-    .replace(/Extraction fallback reason:.*$/i, '')
-    .trim();
+  if (typeof result?.explanation === 'string' && result.explanation.trim()) return result.explanation;
+  return 'Deterministic FastF1 analysis loaded.';
 }
 
-function SpeedTrapPanel({ speedTrap }) {
-  if (!speedTrap) return null;
-  const d1 = speedTrap.driver1 || {};
-  const d2 = speedTrap.driver2 || {};
-  const winner = speedTrap.faster_driver;
-  const delta = speedTrap.speed_delta_kph;
-
-  return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-      <div className="mb-2 flex items-center gap-2 text-neutral-300">
-        <Gauge size={16} className="text-red-400" />
-        <h3 className="text-xs font-bold uppercase tracking-wider">Speed Trap</h3>
-      </div>
-      <div className="space-y-2 text-xs">
-        <div className="flex items-center justify-between rounded border border-neutral-800 px-3 py-2">
-          <span>{d1.code || 'Driver 1'}</span>
-          <span className="font-mono">{d1.max_speed_kph ?? '—'} km/h</span>
-        </div>
-        <div className="flex items-center justify-between rounded border border-neutral-800 px-3 py-2">
-          <span>{d2.code || 'Driver 2'}</span>
-          <span className="font-mono">{d2.max_speed_kph ?? '—'} km/h</span>
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-neutral-400">
-        <CarFront size={12} className="inline mr-1 text-red-400" />
-        Fastest at trap: <span className="text-neutral-200 font-semibold">{winner || '—'}</span>
-        {delta !== null && delta !== undefined ? ` · Δ ${delta} km/h` : ''}
-      </p>
-    </div>
-  );
+function getModeSummaryLabel(mode) {
+  if (mode === 'race_overview') return 'Race Summary';
+  if (mode === 'strategy') return 'Strategy Summary';
+  if (mode === 'telemetry') return 'Telemetry Summary';
+  if (mode === 'results') return 'Results Summary';
+  return 'Comparison Summary';
 }
 
 function compoundClass(compound = '') {
@@ -134,113 +157,565 @@ function compoundClass(compound = '') {
   return 'bg-neutral-500';
 }
 
-function TyreStrategyPanel({ tyreStrategy }) {
-  if (!tyreStrategy) return null;
-  const d1 = tyreStrategy.driver1 || { code: 'D1', stints: [] };
-  const d2 = tyreStrategy.driver2 || { code: 'D2', stints: [] };
-  const rec = tyreStrategy.recommended_strategy;
+function hasSpeedTrapData(speedTrap) {
+  return Boolean(speedTrap && (speedTrap.driver1 || speedTrap.driver2));
+}
 
-  const row = (driver) => (
-    <div className="space-y-1">
-      <p className="text-[11px] text-neutral-400 uppercase tracking-wider">{driver.code} Strategy</p>
-      <div className="flex flex-wrap gap-2">
-        {(driver.stints || []).length === 0 && <span className="text-xs text-neutral-500">No stint data</span>}
-        {(driver.stints || []).map((s, i) => (
-          <div key={`${driver.code}-${i}`} className="rounded border border-neutral-800 px-2 py-1 text-[11px]">
-            <span className={`inline-block h-2.5 w-2.5 rounded-full ${compoundClass(s.compound)} mr-1 align-middle`} />
-            S{s.stint}: {s.start_lap ?? '—'}–{s.end_lap ?? '—'}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function hasTyreRows(tyreStrategy) {
+  if (!tyreStrategy) return false;
+  const rows = [tyreStrategy.driver1, tyreStrategy.driver2].filter(Boolean);
+  return rows.some((d) => (d.stints || []).length > 0) || Boolean(tyreStrategy.recommended_strategy);
+}
+
+function SpeedTrapPanel({ speedTrap, compact = false }) {
+  if (!hasSpeedTrapData(speedTrap)) return null;
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-300">Tyre Strategy</h3>
-      <div className="space-y-3">
-        {row(d1)}
-        {row(d2)}
+      <div className="mb-2 flex items-center gap-2 text-neutral-300">
+        <Gauge size={16} className="text-red-400" />
+        <h3 className="text-xs font-bold uppercase tracking-wider">Speed Trap</h3>
       </div>
-      {rec && (
-        <p className="mt-3 text-xs text-neutral-400">
-          Baseline recommendation: <span className="text-neutral-200">{rec.based_on_driver}</span> → {(rec.compound_sequence || []).join(' → ')}
+      <div className="space-y-2 text-xs">
+        {[speedTrap.driver1, speedTrap.driver2].filter(Boolean).map((d, idx) => (
+          <div key={idx} className="flex items-center justify-between rounded border border-neutral-800 px-3 py-2">
+            <span>{d.code || `Driver ${idx + 1}`}</span>
+            <span className="font-mono">{d.max_speed_kph ?? '—'} km/h</span>
+          </div>
+        ))}
+      </div>
+      {!compact && (
+        <p className="mt-2 text-xs text-neutral-400">
+          <CarFront size={12} className="mr-1 inline text-red-400" />
+          Fastest at trap: <span className="font-semibold text-neutral-200">{speedTrap.faster_driver || '—'}</span>
         </p>
       )}
     </div>
   );
 }
 
+function TyreStrategyPanel({ tyreStrategy }) {
+  if (!hasTyreRows(tyreStrategy)) return null;
+  const rows = [tyreStrategy.driver1, tyreStrategy.driver2].filter(Boolean);
+
+  return (
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-300">Tyre Strategy</h3>
+      <div className="space-y-3">
+        {rows.map((driver, i) => (
+          <div key={i} className="space-y-1">
+            <p className="text-[11px] uppercase tracking-wider text-neutral-400">{driver.code || `Driver ${i + 1}`}</p>
+            <div className="flex flex-wrap gap-2">
+              {(driver.stints || []).length === 0 && <span className="text-xs text-neutral-500">No stint data</span>}
+              {(driver.stints || []).map((s, idx) => (
+                <div key={idx} className="rounded border border-neutral-800 px-2 py-1 text-[11px]">
+                  <span className={`mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle ${compoundClass(s.compound)}`} />
+                  S{s.stint}: {s.start_lap ?? '—'}–{s.end_lap ?? '—'}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {tyreStrategy.recommended_strategy && (
+        <p className="mt-3 text-xs text-neutral-400">
+          Baseline: <span className="text-neutral-200">{tyreStrategy.recommended_strategy.based_on_driver}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RaceContextPanel({ raceContext = {} }) {
+  const winner = raceContext?.winner;
+  const podium = raceContext?.podium || [];
+  const pole = raceContext?.pole_sitter;
+  const fastest = raceContext?.fastest_lap;
+  const weather = raceContext?.weather;
+  const hasWeather = Boolean(weather && (weather.air_temp_avg || weather.track_temp_avg));
+
+  const itemClass = 'rounded border border-neutral-800 bg-neutral-950/50 p-3';
+  const labelClass = 'mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-neutral-500';
+
+  return (
+    <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-100">
+        <Trophy size={14} className="text-amber-300" />
+        Race Context
+      </h3>
+      <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 xl:grid-cols-3">
+        <div className={itemClass}>
+          <p className={labelClass}><Trophy size={12} className="text-amber-300" />Winner</p>
+          <p className="mt-1 font-semibold text-neutral-200">{winner?.code || '—'} {winner?.team ? `· ${winner.team}` : ''}</p>
+        </div>
+
+        <div className={itemClass}>
+          <p className={labelClass}><Flag size={12} className="text-red-300" />Pole</p>
+          <p className="mt-1 font-semibold text-neutral-200">{pole?.code || '—'} {pole?.team ? `· ${pole.team}` : ''}</p>
+        </div>
+
+        <div className={`${itemClass} xl:col-span-1 sm:col-span-2`}>
+          <p className={labelClass}><Medal size={12} className="text-slate-300" />Podium</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {podium.length ? podium.map((p) => (
+              <span key={`${p.position}-${p.code}`} className="inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-200">
+                {String(p.position) === '1' && <Trophy size={11} className="text-amber-300" />}
+                {String(p.position) === '2' && <Medal size={11} className="text-slate-300" />}
+                {String(p.position) === '3' && <Award size={11} className="text-orange-300" />}
+                P{p.position} {p.code}
+              </span>
+            )) : <span className="text-neutral-400">—</span>}
+          </div>
+        </div>
+
+        <div className={itemClass}>
+          <p className={labelClass}><Timer size={12} className="text-violet-300" />Fastest Lap</p>
+          <p className="mt-1 font-semibold text-neutral-200">{fastest?.driver || '—'} {fastest?.lap_time ? `· ${fastest.lap_time}` : ''}</p>
+        </div>
+
+        <div className={`${itemClass} ${hasWeather ? 'sm:col-span-2' : ''}`}>
+          <p className={labelClass}><CloudSun size={12} className="text-sky-300" />Weather</p>
+          <p className="mt-1 font-semibold text-neutral-200">
+            {weather ? `${weather.air_temp_avg ?? '—'}°C air · ${weather.track_temp_avg ?? '—'}°C track` : '—'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RaceTimelinePanel({ raceTimeline = [] }) {
+  const compact = raceTimeline.length > 0 && raceTimeline.length <= 4;
+  return (
+    <div className={`rounded-xl border border-sky-500/25 bg-sky-500/5 ${compact ? 'p-3' : 'p-4'}`}>
+      <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-sky-100">
+        <Map size={14} className="text-sky-300" />
+        Race Timeline
+      </h3>
+      <div className="grid gap-2">
+        {!raceTimeline.length && (
+          <div className="rounded border border-neutral-800 px-3 py-2 text-xs text-neutral-500">No detailed timeline events available.</div>
+        )}
+        {raceTimeline.slice(0, 14).map((e, idx) => (
+          <div key={`${e.time}-${idx}`} className={`rounded border border-neutral-800 text-xs ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-neutral-200">{e.event || e.status || 'Event'}</span>
+              <span className="font-mono text-neutral-500">{e.session_time || e.time || '—'}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-neutral-400">{e.meaning || 'Race status update'}</span>
+              <span className="text-red-300">{e.impact || 'Info'}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TeamBattlesPanel({ teamBattles = [] }) {
+  if (!teamBattles.length) return null;
+  const compact = teamBattles.length <= 2;
+
+  return (
+    <div className={`rounded-xl border border-violet-500/25 bg-violet-500/5 ${compact ? 'p-3' : 'p-4'}`}>
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-violet-100">
+        <Swords size={14} className="text-violet-300" />
+        Team Battles
+      </h3>
+      <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
+        {teamBattles.map((b) => (
+          <div key={b.team} className={`rounded-lg border border-neutral-700 bg-neutral-950/50 text-xs ${compact ? 'p-2.5' : 'p-3'}`}>
+            <p className="mb-1.5 font-bold text-neutral-200">{b.team}</p>
+            <p className="text-neutral-400">{b.driver1?.code} (P{b.driver1?.position || '—'}) vs {b.driver2?.code} (P{b.driver2?.position || '—'})</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisSummary({ label, text, request, mode }) {
+  return (
+    <aside className="space-y-4 rounded-xl border border-neutral-800 bg-[#15151e]/70 p-4">
+      <div className="flex items-center gap-2 text-red-500">
+        <Info size={16} />
+        <h2 className="text-xs font-bold uppercase tracking-widest">{label}</h2>
+      </div>
+      <p className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 text-sm leading-relaxed text-neutral-200">"{text}"</p>
+      {request && (
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 p-3 text-[11px] uppercase tracking-wider text-neutral-400 xl:grid-cols-4">
+          <span>{request.year || '--'}</span>
+          <span>{request.race || '--'}</span>
+          <span>{request.session || '--'}</span>
+          <span>{mode || 'head_to_head'}</span>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function StructuredControls({ values, setValues, onAnalyze, loading, compact = false }) {
+  const needsDrivers = values.mode === 'head_to_head' || values.mode === 'telemetry';
+  const inputClass = `w-full rounded-md border border-neutral-700 bg-neutral-900/70 px-3 text-sm focus:border-red-600 focus:outline-none ${compact ? 'py-1.5' : 'py-2'}`;
+  const labelClass = `mb-1 block text-[10px] uppercase tracking-widest text-neutral-500 ${compact ? 'sr-only md:not-sr-only' : ''}`;
+
+  return (
+    <div className={`${compact ? 'rounded-lg border border-neutral-800 bg-[#15151e]/60 p-3' : 'rounded-xl border border-neutral-800 bg-[#15151e]/70 p-4'}`}>
+      {!compact && <p className="mb-2 text-xs uppercase tracking-widest text-neutral-400">Structured Analyzer</p>}
+
+      <div className={`grid gap-2 ${needsDrivers ? 'grid-cols-2 md:grid-cols-4 xl:grid-cols-7' : 'grid-cols-2 md:grid-cols-4 xl:grid-cols-5'}`}>
+        <div>
+          <label className={labelClass}>Year</label>
+          <input
+            className={inputClass}
+            type="number"
+            value={values.year}
+            onChange={(e) => setValues((v) => ({ ...v, year: Number(e.target.value) || 2024 }))}
+            min="2018"
+            max="2030"
+          />
+        </div>
+
+        <div>
+          <label className={labelClass}>Race</label>
+          <select className={inputClass} value={values.race} onChange={(e) => setValues((v) => ({ ...v, race: e.target.value }))}>
+            {RACE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className={labelClass}>Session</label>
+          <select className={inputClass} value={values.session} onChange={(e) => setValues((v) => ({ ...v, session: e.target.value }))}>
+            {['Race', 'Qualifying', 'Sprint'].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className={labelClass}>Mode</label>
+          <select className={inputClass} value={values.mode} onChange={(e) => setValues((v) => ({ ...v, mode: e.target.value }))}>
+            {ANALYSIS_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </div>
+
+        {needsDrivers && (
+          <>
+            <div>
+              <label className={labelClass}>Driver 1</label>
+              <select className={inputClass} value={values.driver1} onChange={(e) => setValues((v) => ({ ...v, driver1: e.target.value }))}>
+                {DRIVER_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Driver 2</label>
+              <select className={inputClass} value={values.driver2} onChange={(e) => setValues((v) => ({ ...v, driver2: e.target.value }))}>
+                {DRIVER_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </>
+        )}
+
+        <div className="flex items-end">
+          <button
+            onClick={onAnalyze}
+            disabled={loading}
+            className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+          >
+            {loading ? 'Analyzing...' : 'Analyze'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompactNLP({ query, setQuery, loading, onSubmit, placeholder }) {
+  return (
+    <form onSubmit={onSubmit} className="relative w-full">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-neutral-700 bg-neutral-900/70 py-2 pl-3 pr-10 text-sm focus:border-red-600 focus:outline-none"
+      />
+      <button type="submit" disabled={loading} className="absolute right-1.5 top-1.5 rounded bg-red-600 p-1.5 hover:bg-red-700 disabled:opacity-50">
+        {loading ? <Loader2 className="animate-spin" size={15} /> : <Search size={15} />}
+      </button>
+    </form>
+  );
+}
+
 export default function App() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  const [query, setQuery] = useState("");
+
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
-  const [activeTab, setActiveTab] = useState("insights");
   const [error, setError] = useState(null);
+  const [headToHeadTab, setHeadToHeadTab] = useState('insights');
+  const [resultsView, setResultsView] = useState('race');
+  const [showToolbarNlp, setShowToolbarNlp] = useState(false);
+
+  const [structured, setStructured] = useState({
+    year: 2024,
+    race: 'British Grand Prix',
+    session: 'Race',
+    mode: 'race_overview',
+    driver1: 'VER',
+    driver2: 'HAM',
+  });
 
   const promptChips = [
-    "Why was VER faster than HAM in Silverstone 2024 qualifying?",
-    "Compare NOR vs PIA in Brazil 2024 sprint",
-    "Who had better braking consistency in Monaco 2024 race?"
+    'Why was VER faster than HAM in Silverstone 2024 qualifying?',
+    'Compare NOR vs PIA in Brazil 2024 sprint',
+    'Who had better braking consistency in Monaco 2024 race?',
   ];
 
-  const safeLapTime = (value = '') => {
-    if (!value) return '--';
-    return value.split('0 days ')[1]?.substring(0, 8) || value;
+  const currentMode = result?.mode || structured.mode || 'head_to_head';
+  const summaryLabel = getModeSummaryLabel(currentMode);
+  const briefing = getBriefingText(result);
+
+  const hasDualResults = useMemo(() => {
+    const raceRows = Array.isArray(result?.race_results) ? result.race_results : [];
+    const sessionRows = Array.isArray(result?.session_results) ? result.session_results : [];
+    return raceRows.length > 0 && sessionRows.length > 0;
+  }, [result]);
+
+  const getDisplayResults = () => {
+    if (!result) return [];
+    if (hasDualResults) {
+      return resultsView === 'session' ? (result.session_results || []) : (result.race_results || []);
+    }
+    return result.results || result.session_results || [];
   };
 
-  const handleSearch = async (e) => {
+  const handleNaturalLanguageSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
-    
+
     setHasSearched(true);
     setLoading(true);
     setError(null);
     try {
-      // Points to our FastAPI backend
       const res = await axios.post(`${API_BASE}/api/analyze`, { query });
-      setResult(normalizeResultPayload(res.data));
-      setActiveTab('insights');
+      const normalized = normalizeResultPayload(res.data);
+      setResult(normalized);
+      setHeadToHeadTab('insights');
+      setResultsView('race');
     } catch (err) {
-      console.error("Analysis failed", err);
-      setError("Failed to fetch F1 data. Ensure the backend is running and your API key is valid.");
+      console.error('Analysis failed', err);
+      setError('Failed to fetch F1 data. Ensure backend is running.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#0b0b10] text-white font-sans selection:bg-red-500/30">
-      {!hasSearched ? (
-        <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
-          <div className="w-14 h-14 bg-red-600 flex items-center justify-center rounded-sm italic font-black text-3xl mb-5">F1</div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">F1 AI Race Analyst</h1>
-          <p className="mt-3 mb-8 text-neutral-400 max-w-2xl">
-            Ask a race question and get telemetry overlays, driver head-to-head and grand prix insights.
-          </p>
+  const handleStructuredAnalyze = async () => {
+    setHasSearched(true);
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = {
+        year: structured.year,
+        race: structured.race,
+        session: structured.session,
+        mode: structured.mode,
+      };
 
-          <form onSubmit={handleSearch} className="w-full max-w-3xl relative">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g., Why was VER faster than HAM in Silverstone 2024 qualifying?"
-              className="w-full bg-neutral-900/70 border border-neutral-700 rounded-xl py-4 pl-5 pr-14 focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 transition-all text-sm"
-            />
-            <button type="submit" disabled={loading} className="absolute right-2 top-2.5 p-2 bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors">
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
+      if (structured.mode === 'head_to_head' || structured.mode === 'telemetry') {
+        payload.driver1 = structured.driver1;
+        payload.driver2 = structured.driver2;
+      }
+
+      const res = await axios.post(`${API_BASE}/api/structured-analyze`, payload);
+      const normalized = normalizeResultPayload(res.data);
+
+      if (normalized?.type === 'error') {
+        const detail = (normalized.errors || []).join(', ');
+        setError(`${normalized.message || 'Structured analyze failed'}${detail ? `: ${detail}` : ''}`);
+      }
+
+      setResult(normalized);
+      setHeadToHeadTab('insights');
+      setResultsView('race');
+    } catch (err) {
+      console.error('Structured analysis failed', err);
+      setError('Structured analyze failed. Check backend logs and input selections.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderRaceOverview = () => (
+    <div className="space-y-4">
+      <RaceContextPanel raceContext={result?.race_context || {}} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <RaceTimelinePanel raceTimeline={result?.race_timeline || []} />
+        <TeamBattlesPanel teamBattles={result?.team_battles || []} />
+      </div>
+      <ResultsTable results={result?.results || []} mode="race_overview" request={result?.request} />
+    </div>
+  );
+
+  const renderHeadToHead = () => (
+    <div className="grid gap-4 xl:grid-cols-[320px,1fr]">
+      <div className="space-y-4 xl:sticky xl:top-[112px] xl:z-20 xl:h-fit xl:self-start xl:rounded-lg xl:bg-[#0b0b10]/95 xl:p-1 xl:backdrop-blur-sm">
+        <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
+        <SpeedTrapPanel speedTrap={result?.speed_trap} />
+        <TyreStrategyPanel tyreStrategy={result?.tyre_strategy} />
+      </div>
+
+      <div className="space-y-4 xl:relative xl:z-10">
+        <nav className="flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg border border-neutral-800 bg-[#15151e]/70 p-2">
+          {[
+            { id: 'insights', label: 'Insights', icon: <Info size={14} /> },
+            { id: 'track', label: 'Track Map', icon: <Map size={14} /> },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setHeadToHeadTab(tab.id)}
+              className={`flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-xs uppercase tracking-wider ${
+                headToHeadTab === tab.id ? 'bg-red-600/20 text-white' : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
             </button>
-          </form>
+          ))}
+        </nav>
 
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
-            {promptChips.map(tag => (
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900/35 px-3 py-2 text-[11px] text-neutral-400">
+          Head-to-Head now focuses on direct driver comparison only. Use dedicated modes for full <span className="text-neutral-200">Results</span>, <span className="text-neutral-200">Telemetry</span>, and <span className="text-neutral-200">Race Overview</span> details.
+        </div>
+
+        {headToHeadTab === 'insights' && (
+          <InsightsLab
+            data={result?.data}
+            headToHead={result?.head_to_head}
+            comparisonOnly
+          />
+        )}
+
+        {headToHeadTab === 'track' && (
+          <ChartErrorBoundary>
+            <TrackMap data={result?.data} />
+          </ChartErrorBoundary>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderStrategy = () => {
+    const inferred = result?.strategy_meta?.scope === 'race_level_inferred_top_finishers';
+    const hasData = hasTyreRows(result?.tyre_strategy);
+
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-4 xl:grid-cols-[320px,1fr]">
+          <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
+          <div className="space-y-4">
+            {hasData ? (
+              <TyreStrategyPanel tyreStrategy={result?.tyre_strategy} />
+            ) : (
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900/45 p-4 text-sm text-neutral-300">
+                Strategy data is limited for this session. Showing available race context and results.
+              </div>
+            )}
+            {inferred && (
+              <div className="rounded-lg border border-neutral-800 bg-neutral-900/45 p-3 text-xs text-neutral-400">
+                Drivers were inferred from top finishers for strategy comparison.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <RaceContextPanel raceContext={result?.race_context || {}} />
+        <ResultsTable results={result?.results || []} mode="strategy" request={result?.request} />
+      </div>
+    );
+  };
+
+  const renderTelemetry = () => (
+    <div className="space-y-4">
+      <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartErrorBoundary>
+          <TrackMap data={result?.data} />
+        </ChartErrorBoundary>
+        <SpeedTrapPanel speedTrap={result?.speed_trap} compact />
+      </div>
+      <ChartErrorBoundary>
+        <TelemetryChart data={result?.data} />
+      </ChartErrorBoundary>
+      <ChartErrorBoundary>
+        <DeltaChart data={result?.data} />
+      </ChartErrorBoundary>
+    </div>
+  );
+
+  const renderResults = () => (
+    <div className="space-y-4">
+      <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
+      {hasDualResults && (
+        <div className="inline-flex rounded-md border border-neutral-800 bg-[#15151e]/70 p-1 text-xs uppercase tracking-wider">
+          <button
+            onClick={() => setResultsView('race')}
+            className={`rounded px-3 py-1.5 ${resultsView === 'race' ? 'bg-red-600/20 text-white' : 'text-neutral-400'}`}
+          >
+            Race Results
+          </button>
+          <button
+            onClick={() => setResultsView('session')}
+            className={`rounded px-3 py-1.5 ${resultsView === 'session' ? 'bg-red-600/20 text-white' : 'text-neutral-400'}`}
+          >
+            Session Results
+          </button>
+        </div>
+      )}
+      <ResultsTable results={getDisplayResults()} mode="results" request={result?.request} />
+    </div>
+  );
+
+  const renderMainContent = () => {
+    if (!result) return null;
+    if (currentMode === 'race_overview') return renderRaceOverview();
+    if (currentMode === 'strategy') return renderStrategy();
+    if (currentMode === 'telemetry') return renderTelemetry();
+    if (currentMode === 'results') return renderResults();
+    return renderHeadToHead();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0b0b10] font-sans text-white selection:bg-red-500/30">
+      {!hasSearched ? (
+        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-4 px-4 py-8">
+          <div className="mb-1 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-red-600 text-2xl font-black italic">F1</div>
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">F1 AI Race Analyst</h1>
+          </div>
+
+          <StructuredControls values={structured} setValues={setStructured} onAnalyze={handleStructuredAnalyze} loading={loading} />
+
+          <div className="w-full max-w-5xl rounded-lg border border-neutral-800 bg-[#15151e]/50 p-3">
+            <p className="mb-2 text-xs uppercase tracking-widest text-neutral-500">Or ask a question</p>
+            <CompactNLP
+              query={query}
+              setQuery={setQuery}
+              loading={loading}
+              onSubmit={handleNaturalLanguageSearch}
+              placeholder="Why was VER faster than HAM in Silverstone 2024 qualifying?"
+            />
+          </div>
+
+          <div className="mt-1 flex w-full max-w-5xl flex-wrap gap-2">
+            {promptChips.map((tag) => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => setQuery(tag)}
-                className="px-3 py-1 bg-neutral-900 border border-neutral-800 rounded text-xs text-neutral-400 hover:text-neutral-200 hover:border-neutral-600 transition-colors"
+                className="rounded border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-[11px] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               >
                 {tag}
               </button>
@@ -249,165 +724,56 @@ export default function App() {
         </div>
       ) : (
         <>
-          <header className="p-6 border-b border-neutral-800 bg-[#15151e] sticky top-0 z-50 backdrop-blur">
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-red-600 flex items-center justify-center rounded-sm italic font-black text-2xl">F1</div>
-                <h1 className="text-xl font-bold uppercase tracking-tighter">AI Race Analyst <span className="text-red-600 text-xs ml-1">BETA</span></h1>
+          <header className="sticky top-0 z-50 border-b border-neutral-800 bg-[#15151e]/95 px-3 py-3 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-red-600 text-lg font-black italic">F1</div>
+                  <p className="text-sm font-bold uppercase tracking-wider">Race Analyst</p>
+                </div>
+                <button
+                  onClick={() => setShowToolbarNlp((v) => !v)}
+                  className="rounded border border-neutral-700 px-2.5 py-1.5 text-xs uppercase tracking-wider text-neutral-300 hover:text-white"
+                >
+                  {showToolbarNlp ? 'Hide query' : 'Ask'}
+                </button>
               </div>
 
-              <form onSubmit={handleSearch} className="w-full max-w-3xl relative">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g., Why was VER faster than HAM in Silverstone 2024?"
-                  className="w-full bg-neutral-900/50 border border-neutral-700 rounded-md py-3 pl-5 pr-12 focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 transition-all text-sm"
+              <StructuredControls
+                values={structured}
+                setValues={setStructured}
+                onAnalyze={handleStructuredAnalyze}
+                loading={loading}
+                compact
+              />
+
+              {showToolbarNlp && (
+                <CompactNLP
+                  query={query}
+                  setQuery={setQuery}
+                  loading={loading}
+                  onSubmit={handleNaturalLanguageSearch}
+                  placeholder="Ask a natural-language racing question..."
                 />
-                <button type="submit" disabled={loading} className="absolute right-2 top-1.5 p-1.5 bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  {loading ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
-                </button>
-              </form>
+              )}
             </div>
           </header>
 
           {error && (
-            <div className="max-w-7xl mx-auto m-6 p-4 bg-red-900/20 border border-red-900/50 rounded-lg flex items-center gap-3 text-red-200">
-              <AlertCircle size={20} /> {error}
+            <div className="mx-auto my-4 flex w-full max-w-[1600px] items-center gap-2 rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-200">
+              <AlertCircle size={16} /> {error}
             </div>
           )}
 
           {loading && !result ? (
-            <div className="max-w-7xl mx-auto p-6 animate-pulse space-y-4">
-              <div className="h-10 bg-neutral-900 rounded-md" />
-              <div className="h-80 bg-neutral-900 rounded-xl" />
-              <div className="h-80 bg-neutral-900 rounded-xl" />
+            <div className="mx-auto w-full max-w-[1600px] animate-pulse space-y-3 p-4">
+              <div className="h-10 rounded-md bg-neutral-900" />
+              <div className="h-80 rounded-xl bg-neutral-900" />
             </div>
           ) : result ? (
-        <main className="max-w-[1600px] mx-auto flex flex-col lg:flex-row h-[calc(100vh-100px)]">
-          
-          {/* LEFT PANEL: FASTF1 SUMMARY */}
-          <aside className="w-full lg:w-1/3 p-6 border-r border-neutral-800 overflow-y-auto bg-[#15151e]/30">
-            <div className="flex items-center gap-2 text-red-500 mb-6">
-              <Info size={18} />
-              <h2 className="text-sm font-bold uppercase tracking-widest">FastF1 Session Note</h2>
-            </div>
-            
-            <div className="bg-neutral-900/80 rounded-xl p-5 border border-neutral-800 mb-6 shadow-xl">
-              <p className="text-neutral-200 leading-relaxed text-sm italic">
-                "{getBriefingText(result)}"
-              </p>
-            </div>
-
-            {result.request && (
-              <div className="mb-6 p-4 rounded-lg border border-neutral-800 bg-neutral-900/40 text-xs text-neutral-400 uppercase tracking-wider grid grid-cols-3 gap-2">
-                <span>{result.request.year || '--'}</span>
-                <span>{result.request.race || '--'}</span>
-                <span>{result.request.session || '--'}</span>
-              </div>
-            )}
-
-            {/* QUICK STATS CARD */}
-            {result.data && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-blue-900/10 border-l-4 border-blue-500 rounded-r-lg">
-                  <span className="text-[10px] text-blue-400 uppercase font-bold">{result.data.driver1.name}</span>
-                  <p className="text-lg font-mono font-bold mt-1">{safeLapTime(result.data.driver1.lap_time)}</p>
-                </div>
-                <div className="p-4 bg-yellow-900/10 border-l-4 border-yellow-500 rounded-r-lg">
-                  <span className="text-[10px] text-yellow-400 uppercase font-bold">{result.data.driver2.name}</span>
-                  <p className="text-lg font-mono font-bold mt-1">{safeLapTime(result.data.driver2.lap_time)}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 space-y-4">
-              <SpeedTrapPanel speedTrap={result.speed_trap} />
-              <TyreStrategyPanel tyreStrategy={result.tyre_strategy} />
-            </div>
-          </aside>
-
-          {/* RIGHT PANEL: VISUALIZATIONS */}
-          <section className="w-full lg:w-2/3 flex flex-col bg-[#0b0b10]">
-            {/* TAB NAVIGATION */}
-            <nav className="flex bg-[#15151e] border-b border-neutral-800 px-4">
-              {[
-                { id: 'insights', label: 'Insights Lab', icon: <Info size={16}/> },
-                { id: 'results', label: 'Results', icon: <Timer size={16}/> },
-                { id: 'track', label: 'Track Map', icon: <Map size={16}/> },
-                { id: 'telemetry', label: 'Telemetry', icon: <Activity size={16}/> }
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
-                    activeTab === tab.id ? 'border-red-600 text-white bg-red-600/5' : 'border-transparent text-neutral-500 hover:text-neutral-300'
-                  }`}
-                >
-                  {tab.icon} {tab.label}
-                </button>
-              ))}
-            </nav>
-
-            {/* TAB CONTENT */}
-            <div className="flex-1 p-8 overflow-y-auto">
-              {activeTab === 'telemetry' && result.data && (
-                <div className="space-y-8 animate-in fade-in duration-500">
-                  <ChartErrorBoundary>
-                    <TelemetryChart data={result.data} />
-                  </ChartErrorBoundary>
-                  <ChartErrorBoundary>
-                    <DeltaChart data={result.data} />
-                  </ChartErrorBoundary>
-                </div>
-              )}
-
-              {activeTab === 'telemetry' && !result.data && (
-                <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-400">
-                  Telemetry is unavailable for this response. {result.explanation || 'Try a more specific query with two drivers, race, year, and session.'}
-                </div>
-              )}
-
-              {activeTab === 'track' && result.data && (
-                <div className="h-full min-h-[500px] animate-in zoom-in-95 duration-500">
-                  <ChartErrorBoundary>
-                    <TrackMap data={result.data} />
-                  </ChartErrorBoundary>
-                </div>
-              )}
-
-              {activeTab === 'track' && !result.data && (
-                <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-400">
-                  Track map is unavailable for this response. {result.explanation || 'Try a more specific query with two drivers, race, year, and session.'}
-                </div>
-              )}
-
-              {activeTab === 'results' && (
-                <div className="animate-in slide-in-from-bottom-4 duration-500">
-                  <ResultsTable
-                    results={result.results || []}
-                    headToHead={result.head_to_head}
-                    request={result.request}
-                  />
-                </div>
-              )}
-
-              {activeTab === 'insights' && (
-                <div className="animate-in slide-in-from-bottom-4 duration-500">
-                  <InsightsLab
-                    data={result.data}
-                    headToHead={result.head_to_head}
-                    raceTimeline={result.race_timeline}
-                    teamBattles={result.team_battles}
-                    raceContext={result.race_context}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
-        </main>
-      ) : (
-            <div className="max-w-7xl mx-auto p-6 text-neutral-400">Search to load analysis.</div>
+            <main className="mx-auto w-full max-w-[1600px] p-4">{renderMainContent()}</main>
+          ) : (
+            <div className="mx-auto w-full max-w-7xl p-6 text-neutral-400">Search to load analysis.</div>
           )}
         </>
       )}

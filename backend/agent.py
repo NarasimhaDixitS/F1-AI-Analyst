@@ -62,6 +62,16 @@ RACE_ALIASES = {
     "Abu Dhabi Grand Prix": ["abu dhabi", "yas marina"],
 }
 
+SUPPORTED_STRUCTURED_MODES = {
+    "race_overview",
+    "head_to_head",
+    "strategy",
+    "telemetry",
+    "results",
+}
+
+SUPPORTED_SESSIONS = {"Race", "Qualifying", "Sprint"}
+
 
 def _build_llm_providers():
     providers = []
@@ -533,3 +543,384 @@ async def process_query(user_query: str):
     _write_cached_response(args, response_payload)
     response_payload["cache"] = {"response": "miss"}
     return response_payload
+
+
+def _structured_error(message: str, errors=None, request=None):
+    return {
+        "type": "error",
+        "message": message,
+        "errors": errors or [],
+        "request": request,
+    }
+
+
+def _normalize_structured_request(payload: dict):
+    raw = payload or {}
+
+    raw_driver1 = raw.get("driver1")
+    raw_driver2 = raw.get("driver2")
+
+    normalized = {
+        "year": raw.get("year"),
+        "race": str(raw.get("race", "")).strip(),
+        "session": str(raw.get("session", "")).strip(),
+        "mode": str(raw.get("mode", "")).strip(),
+        "driver1": str(raw_driver1).strip().upper() if raw_driver1 not in [None, ""] else None,
+        "driver2": str(raw_driver2).strip().upper() if raw_driver2 not in [None, ""] else None,
+    }
+
+    errors = []
+
+    if normalized["year"] is None:
+        errors.append("year is required")
+    else:
+        try:
+            normalized["year"] = int(normalized["year"])
+        except Exception:
+            errors.append("year must be an integer")
+
+    if not normalized["race"]:
+        errors.append("race is required")
+    if not normalized["session"]:
+        errors.append("session is required")
+    if not normalized["mode"]:
+        errors.append("mode is required")
+
+    if normalized["session"] and normalized["session"] not in SUPPORTED_SESSIONS:
+        errors.append("unsupported session. Use one of: Race, Qualifying, Sprint")
+
+    if normalized["mode"] and normalized["mode"] not in SUPPORTED_STRUCTURED_MODES:
+        errors.append(
+            "unsupported mode. Use one of: race_overview, head_to_head, strategy, telemetry, results"
+        )
+
+    if normalized["race"] and normalized["race"] not in RACE_ALIASES:
+        errors.append("unsupported race. Use official race names (e.g., 'British Grand Prix')")
+
+    mode_requires_drivers = normalized["mode"] in {"head_to_head", "telemetry"}
+    if mode_requires_drivers:
+        if not normalized["driver1"]:
+            errors.append("driver1 is required for head_to_head and telemetry modes")
+        if not normalized["driver2"]:
+            errors.append("driver2 is required for head_to_head and telemetry modes")
+
+    for key in ["driver1", "driver2"]:
+        code = normalized.get(key)
+        if code and code not in DRIVER_ALIASES:
+            errors.append(f"{key} must be a supported 3-letter driver code")
+
+    return normalized, errors
+
+
+def _build_request_session_loader(args: dict):
+    request_sessions = {}
+
+    def _get_request_session(session_name: str, weather: bool = False):
+        key = (
+            int(args["year"]),
+            str(args["race"]).strip(),
+            str(session_name).strip(),
+            bool(weather),
+        )
+        if key not in request_sessions:
+            request_sessions[key] = F1DataService.load_session(
+                year=args["year"],
+                race=args["race"],
+                session=session_name,
+                weather=weather,
+            )
+        return request_sessions[key]
+
+    return _get_request_session
+
+
+async def process_structured_query(structured_request: dict):
+    args, errors = _normalize_structured_request(structured_request)
+    if errors:
+        return _structured_error(
+            message="Invalid structured analyze request",
+            errors=errors,
+            request=args,
+        )
+
+    try:
+        get_session = _build_request_session_loader(args)
+        selected_session = get_session(args["session"], weather=False)
+        race_session = get_session("Race", weather=False)
+        qualifying_session = get_session("Qualifying", weather=False)
+
+        mode = args["mode"]
+
+        if mode == "race_overview":
+            race_context_payload = F1DataService.get_race_context(
+                year=args["year"],
+                race=args["race"],
+                race_session=race_session,
+                quali_session=qualifying_session,
+            )
+            race_timeline_payload = F1DataService.get_race_timeline(
+                year=args["year"],
+                race=args["race"],
+                race_session=race_session,
+            )
+            team_battles_payload = F1DataService.get_team_battles(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+            race_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+
+            return {
+                "type": "structured",
+                "mode": mode,
+                "request": args,
+                "race_context": race_context_payload,
+                "race_timeline": race_timeline_payload,
+                "team_battles": team_battles_payload,
+                "results": race_results_payload,
+                "session_results": race_results_payload,
+                "data": None,
+                "head_to_head": {},
+                "speed_trap": {},
+                "tyre_strategy": {},
+                "explanation": "Deterministic race overview generated from FastF1 session data.",
+            }
+
+        if mode == "head_to_head":
+            data_payload = F1DataService.compare_drivers(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                session_obj=selected_session,
+            )
+            session_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                session_obj=selected_session,
+            )
+            race_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+            head_to_head_payload = F1DataService.get_head_to_head(
+                year=args["year"],
+                race=args["race"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                quali_session=qualifying_session,
+                race_session=race_session,
+            )
+            race_timeline_payload = F1DataService.get_race_timeline(
+                year=args["year"],
+                race=args["race"],
+                race_session=race_session,
+            )
+            team_battles_payload = F1DataService.get_team_battles(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+            race_context_payload = F1DataService.get_race_context(
+                year=args["year"],
+                race=args["race"],
+                race_session=race_session,
+                quali_session=qualifying_session,
+            )
+            speed_trap_payload = F1DataService.get_speed_trap_summary(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                session_obj=selected_session,
+            )
+            tyre_strategy_payload = F1DataService.get_tyre_strategy(
+                year=args["year"],
+                race=args["race"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                race_session=race_session,
+            )
+
+            return {
+                "type": "comparison",
+                "mode": mode,
+                "explanation": (
+                    f"Deterministic head-to-head for {args['driver1']} vs {args['driver2']} "
+                    f"at {args['race']} {args['year']} {args['session']}."
+                ),
+                "data": data_payload,
+                "results": race_results_payload or session_results_payload,
+                "session_results": session_results_payload,
+                "head_to_head": head_to_head_payload,
+                "race_timeline": race_timeline_payload,
+                "team_battles": team_battles_payload,
+                "race_context": race_context_payload,
+                "speed_trap": speed_trap_payload,
+                "tyre_strategy": tyre_strategy_payload,
+                "request": args,
+                "provider": {
+                    "extraction": "structured_input",
+                    "analysis": "deterministic",
+                },
+                "model": {
+                    "extraction": "none",
+                    "analysis": "none",
+                },
+                "cache": {"response": "miss"},
+            }
+
+        if mode == "strategy":
+            race_context_payload = F1DataService.get_race_context(
+                year=args["year"],
+                race=args["race"],
+                race_session=race_session,
+                quali_session=qualifying_session,
+            )
+            race_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+
+            strategy_meta = {"scope": "race_level"}
+            strategy_driver1 = args.get("driver1")
+            strategy_driver2 = args.get("driver2")
+
+            if not strategy_driver1 or not strategy_driver2:
+                top_codes = [
+                    row.get("Abbreviation")
+                    for row in race_results_payload
+                    if row.get("Abbreviation")
+                ][:2]
+                if len(top_codes) >= 2:
+                    strategy_driver1 = strategy_driver1 or top_codes[0]
+                    strategy_driver2 = strategy_driver2 or top_codes[1]
+                    strategy_meta["scope"] = "race_level_inferred_top_finishers"
+                    strategy_meta["inferred_drivers"] = [strategy_driver1, strategy_driver2]
+
+            if strategy_driver1 and strategy_driver2:
+                tyre_strategy_payload = F1DataService.get_tyre_strategy(
+                    year=args["year"],
+                    race=args["race"],
+                    driver1=strategy_driver1,
+                    driver2=strategy_driver2,
+                    race_session=race_session,
+                )
+            else:
+                tyre_strategy_payload = {
+                    "driver1": {"code": strategy_driver1, "stints": []},
+                    "driver2": {"code": strategy_driver2, "stints": []},
+                    "recommended_strategy": None,
+                }
+
+            return {
+                "type": "structured",
+                "mode": mode,
+                "request": args,
+                "race_context": race_context_payload,
+                "results": race_results_payload,
+                "session_results": race_results_payload,
+                "tyre_strategy": tyre_strategy_payload,
+                "strategy_meta": strategy_meta,
+                "data": None,
+                "head_to_head": {},
+                "race_timeline": [],
+                "team_battles": [],
+                "speed_trap": {},
+                "explanation": "Deterministic strategy summary generated from race context, results, and stint data.",
+            }
+
+        if mode == "telemetry":
+            data_payload = F1DataService.compare_drivers(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                session_obj=selected_session,
+            )
+            speed_trap_payload = F1DataService.get_speed_trap_summary(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                driver1=args["driver1"],
+                driver2=args["driver2"],
+                session_obj=selected_session,
+            )
+
+            return {
+                "type": "structured",
+                "mode": mode,
+                "request": args,
+                "data": data_payload,
+                "speed_trap": speed_trap_payload,
+                "results": [],
+                "session_results": [],
+                "head_to_head": {},
+                "race_timeline": [],
+                "team_battles": [],
+                "race_context": {},
+                "tyre_strategy": {},
+                "explanation": (
+                    f"Deterministic telemetry comparison for {args['driver1']} vs {args['driver2']} "
+                    f"at {args['race']} {args['year']} {args['session']}."
+                ),
+            }
+
+        if mode == "results":
+            session_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session=args["session"],
+                session_obj=selected_session,
+            )
+            race_results_payload = F1DataService.get_results(
+                year=args["year"],
+                race=args["race"],
+                session="Race",
+                session_obj=race_session,
+            )
+
+            return {
+                "type": "structured",
+                "mode": mode,
+                "request": args,
+                "results": race_results_payload or session_results_payload,
+                "session_results": session_results_payload,
+                "race_results": race_results_payload,
+                "data": None,
+                "head_to_head": {},
+                "race_timeline": [],
+                "team_battles": [],
+                "race_context": {},
+                "speed_trap": {},
+                "tyre_strategy": {},
+                "explanation": "Deterministic results view for selected session and race.",
+            }
+
+        return _structured_error(
+            message="Unsupported structured mode",
+            errors=["mode is unsupported"],
+            request=args,
+        )
+
+    except Exception as exc:
+        return _structured_error(
+            message=f"Structured analysis failed: {exc}",
+            errors=[str(exc)],
+            request=args,
+        )
