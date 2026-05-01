@@ -1,4 +1,5 @@
 import React from 'react';
+import { getTeamColor } from '../utils/raceTheme';
 
 function scaleSeries(values = [], minPx, maxPx, invert = false) {
   if (!values.length) return [];
@@ -25,7 +26,7 @@ export default function TelemetryChart({ data }) {
 
   if (d1Distance.length < 2 || d2Distance.length < 2) {
     return (
-      <div className="bg-neutral-900 p-4 rounded-xl border border-neutral-800 text-sm text-neutral-400">
+      <div className="rc-card rounded-xl p-4 text-sm text-[var(--rc-text-secondary)]">
         Not enough telemetry points available to render speed profile.
       </div>
     );
@@ -42,23 +43,25 @@ export default function TelemetryChart({ data }) {
 
   const line1 = buildLinePath(xPx, y1Px);
   const line2 = buildLinePath(xPx, y2Px);
+  const d1Color = getTeamColor(data?.driver1?.team || data?.driver1?.name);
+  const d2Color = getTeamColor(data?.driver2?.team || data?.driver2?.name);
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-      <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-widest text-neutral-400">
+    <div className="rc-card rc-accent-rail rounded-xl p-4" style={{ '--accent-color': 'var(--rc-cyan)' }}>
+      <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-widest text-[var(--rc-text-secondary)]">
         <span>Speed Profile</span>
         <div className="flex gap-4">
-          <span className="text-blue-400">{data.driver1.name}</span>
-          <span className="text-yellow-400">{data.driver2.name}</span>
+          <span style={{ color: d1Color }}>{data.driver1.name}</span>
+          <span style={{ color: d2Color }}>{data.driver2.name}</span>
         </div>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-[360px] w-full">
-        <line x1={pad.l} y1={height - pad.b} x2={width - pad.r} y2={height - pad.b} stroke="#404040" strokeWidth="1" />
-        <line x1={pad.l} y1={pad.t} x2={pad.l} y2={height - pad.b} stroke="#404040" strokeWidth="1" />
-        <path d={line1} stroke="#3b82f6" strokeWidth="2.4" fill="none" />
-        <path d={line2} stroke="#eab308" strokeWidth="2.4" fill="none" />
-        <text x={width / 2} y={height - 8} fill="#a3a3a3" textAnchor="middle" fontSize="12">Distance (m)</text>
-        <text x={16} y={height / 2} fill="#a3a3a3" textAnchor="middle" fontSize="12" transform={`rotate(-90 16 ${height / 2})`}>
+        <line x1={pad.l} y1={height - pad.b} x2={width - pad.r} y2={height - pad.b} stroke="#334155" strokeWidth="1" />
+        <line x1={pad.l} y1={pad.t} x2={pad.l} y2={height - pad.b} stroke="#334155" strokeWidth="1" />
+        <path d={line1} stroke={d1Color} strokeWidth="2.4" fill="none" />
+        <path d={line2} stroke={d2Color} strokeWidth="2.4" fill="none" />
+        <text x={width / 2} y={height - 8} fill="#8B95A7" textAnchor="middle" fontSize="12">Distance (m)</text>
+        <text x={16} y={height / 2} fill="#8B95A7" textAnchor="middle" fontSize="12" transform={`rotate(-90 16 ${height / 2})`}>
           Speed (km/h)
         </text>
       </svg>

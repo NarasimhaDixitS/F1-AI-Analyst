@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  Activity,
   AlertCircle,
   Award,
   CarFront,
@@ -23,6 +22,7 @@ import DeltaChart from './components/DeltaChart';
 import TrackMap from './components/TrackMap';
 import ResultsTable from './components/ResultsTable';
 import InsightsLab from './components/InsightsLab';
+import { getCompoundColor, getModeAccent, getTeamAccentStyle } from './utils/raceTheme';
 
 const DRIVER_OPTIONS = [
   'VER', 'HAM', 'NOR', 'PIA', 'LEC', 'SAI', 'RUS', 'PER', 'ALO', 'STR',
@@ -81,7 +81,7 @@ class ChartErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-400">
+        <div className="rc-card rc-accent-rail rounded-lg p-4 text-sm text-[var(--rc-text-secondary)]" style={{ '--accent-color': 'var(--rc-red)' }}>
           Unable to render chart for this response.
         </div>
       );
@@ -148,13 +148,7 @@ function getModeSummaryLabel(mode) {
 }
 
 function compoundClass(compound = '') {
-  const c = String(compound).toUpperCase();
-  if (c.includes('SOFT')) return 'bg-red-500';
-  if (c.includes('MEDIUM')) return 'bg-yellow-400';
-  if (c.includes('HARD')) return 'bg-white';
-  if (c.includes('INTER')) return 'bg-green-500';
-  if (c.includes('WET')) return 'bg-blue-500';
-  return 'bg-neutral-500';
+  return getCompoundColor(compound);
 }
 
 function hasSpeedTrapData(speedTrap) {
@@ -167,27 +161,35 @@ function hasTyreRows(tyreStrategy) {
   return rows.some((d) => (d.stints || []).length > 0) || Boolean(tyreStrategy.recommended_strategy);
 }
 
+function getImpactChipClass(impact = '') {
+  const value = String(impact || 'Info').toLowerCase();
+  if (value.includes('penalty') || value.includes('incident') || value.includes('red')) return 'rc-chip rc-chip-danger';
+  if (value.includes('caution') || value.includes('yellow') || value.includes('vsc')) return 'rc-chip rc-chip-warning';
+  if (value.includes('gain') || value.includes('positive') || value.includes('improv')) return 'rc-chip rc-chip-success';
+  return 'rc-chip rc-chip-info';
+}
+
 function SpeedTrapPanel({ speedTrap, compact = false }) {
   if (!hasSpeedTrapData(speedTrap)) return null;
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-      <div className="mb-2 flex items-center gap-2 text-neutral-300">
-        <Gauge size={16} className="text-red-400" />
+    <div className="rc-card rc-accent-rail rounded-xl p-4" style={{ '--accent-color': 'var(--rc-cyan)' }}>
+      <div className="mb-2 flex items-center gap-2 text-[var(--rc-text-secondary)]">
+        <Gauge size={16} className="text-[var(--rc-cyan)]" />
         <h3 className="text-xs font-bold uppercase tracking-wider">Speed Trap</h3>
       </div>
       <div className="space-y-2 text-xs">
         {[speedTrap.driver1, speedTrap.driver2].filter(Boolean).map((d, idx) => (
-          <div key={idx} className="flex items-center justify-between rounded border border-neutral-800 px-3 py-2">
+          <div key={idx} className="flex items-center justify-between rounded-lg border border-[var(--rc-border)] bg-[rgba(13,17,26,0.55)] px-3 py-2">
             <span>{d.code || `Driver ${idx + 1}`}</span>
-            <span className="font-mono">{d.max_speed_kph ?? '—'} km/h</span>
+            <span className="rc-tabular text-sm font-semibold text-[var(--rc-text-primary)]">{d.max_speed_kph ?? '—'} km/h</span>
           </div>
         ))}
       </div>
       {!compact && (
-        <p className="mt-2 text-xs text-neutral-400">
-          <CarFront size={12} className="mr-1 inline text-red-400" />
-          Fastest at trap: <span className="font-semibold text-neutral-200">{speedTrap.faster_driver || '—'}</span>
+        <p className="mt-2 text-xs text-[var(--rc-text-secondary)]">
+          <CarFront size={12} className="mr-1 inline text-[var(--rc-green)]" />
+          Fastest at trap: <span className="font-semibold text-[var(--rc-text-primary)]">{speedTrap.faster_driver || '—'}</span>
         </p>
       )}
     </div>
@@ -199,17 +201,17 @@ function TyreStrategyPanel({ tyreStrategy }) {
   const rows = [tyreStrategy.driver1, tyreStrategy.driver2].filter(Boolean);
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-300">Tyre Strategy</h3>
+    <div className="rc-card rc-accent-rail rounded-xl p-4" style={{ '--accent-color': 'var(--rc-yellow)' }}>
+      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--rc-yellow)]">Tyre Strategy</h3>
       <div className="space-y-3">
         {rows.map((driver, i) => (
           <div key={i} className="space-y-1">
-            <p className="text-[11px] uppercase tracking-wider text-neutral-400">{driver.code || `Driver ${i + 1}`}</p>
+            <p className="text-[11px] uppercase tracking-wider text-[var(--rc-text-secondary)]">{driver.code || `Driver ${i + 1}`}</p>
             <div className="flex flex-wrap gap-2">
-              {(driver.stints || []).length === 0 && <span className="text-xs text-neutral-500">No stint data</span>}
+              {(driver.stints || []).length === 0 && <span className="text-xs text-[var(--rc-text-muted)]">No stint data</span>}
               {(driver.stints || []).map((s, idx) => (
-                <div key={idx} className="rounded border border-neutral-800 px-2 py-1 text-[11px]">
-                  <span className={`mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle ${compoundClass(s.compound)}`} />
+                <div key={idx} className="rounded border border-[var(--rc-border)] bg-[rgba(13,17,26,0.5)] px-2 py-1 text-[11px]">
+                  <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: compoundClass(s.compound) }} />
                   S{s.stint}: {s.start_lap ?? '—'}–{s.end_lap ?? '—'}
                 </div>
               ))}
@@ -218,8 +220,8 @@ function TyreStrategyPanel({ tyreStrategy }) {
         ))}
       </div>
       {tyreStrategy.recommended_strategy && (
-        <p className="mt-3 text-xs text-neutral-400">
-          Baseline: <span className="text-neutral-200">{tyreStrategy.recommended_strategy.based_on_driver}</span>
+        <p className="mt-3 text-xs text-[var(--rc-text-secondary)]">
+          Baseline: <span className="text-[var(--rc-text-primary)]">{tyreStrategy.recommended_strategy.based_on_driver}</span>
         </p>
       )}
     </div>
@@ -234,48 +236,48 @@ function RaceContextPanel({ raceContext = {} }) {
   const weather = raceContext?.weather;
   const hasWeather = Boolean(weather && (weather.air_temp_avg || weather.track_temp_avg));
 
-  const itemClass = 'rounded border border-neutral-800 bg-neutral-950/50 p-3';
-  const labelClass = 'mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-neutral-500';
+  const itemClass = 'rounded-lg border border-[var(--rc-border)] bg-[rgba(13,17,26,0.55)] p-3';
+  const labelClass = 'mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--rc-text-muted)]';
 
   return (
-    <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-100">
-        <Trophy size={14} className="text-amber-300" />
+    <div className="rc-card rc-accent-rail rounded-xl p-4" style={{ '--accent-color': 'var(--rc-gold)' }}>
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--rc-gold)]">
+        <Trophy size={14} className="text-[var(--rc-gold)]" />
         Race Context
       </h3>
       <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 xl:grid-cols-3">
         <div className={itemClass}>
           <p className={labelClass}><Trophy size={12} className="text-amber-300" />Winner</p>
-          <p className="mt-1 font-semibold text-neutral-200">{winner?.code || '—'} {winner?.team ? `· ${winner.team}` : ''}</p>
+          <p className="mt-1 font-semibold text-[var(--rc-text-primary)]">{winner?.code || '—'} {winner?.team ? `· ${winner.team}` : ''}</p>
         </div>
 
         <div className={itemClass}>
           <p className={labelClass}><Flag size={12} className="text-red-300" />Pole</p>
-          <p className="mt-1 font-semibold text-neutral-200">{pole?.code || '—'} {pole?.team ? `· ${pole.team}` : ''}</p>
+          <p className="mt-1 font-semibold text-[var(--rc-text-primary)]">{pole?.code || '—'} {pole?.team ? `· ${pole.team}` : ''}</p>
         </div>
 
         <div className={`${itemClass} xl:col-span-1 sm:col-span-2`}>
           <p className={labelClass}><Medal size={12} className="text-slate-300" />Podium</p>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {podium.length ? podium.map((p) => (
-              <span key={`${p.position}-${p.code}`} className="inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-200">
+              <span key={`${p.position}-${p.code}`} className="inline-flex items-center gap-1 rounded-full border border-[var(--rc-border)] bg-[rgba(13,17,26,0.85)] px-2 py-0.5 text-[11px] text-[var(--rc-text-primary)]">
                 {String(p.position) === '1' && <Trophy size={11} className="text-amber-300" />}
                 {String(p.position) === '2' && <Medal size={11} className="text-slate-300" />}
                 {String(p.position) === '3' && <Award size={11} className="text-orange-300" />}
                 P{p.position} {p.code}
               </span>
-            )) : <span className="text-neutral-400">—</span>}
+            )) : <span className="text-[var(--rc-text-secondary)]">—</span>}
           </div>
         </div>
 
         <div className={itemClass}>
           <p className={labelClass}><Timer size={12} className="text-violet-300" />Fastest Lap</p>
-          <p className="mt-1 font-semibold text-neutral-200">{fastest?.driver || '—'} {fastest?.lap_time ? `· ${fastest.lap_time}` : ''}</p>
+          <p className="mt-1 font-semibold text-[var(--rc-text-primary)]">{fastest?.driver || '—'} {fastest?.lap_time ? `· ${fastest.lap_time}` : ''}</p>
         </div>
 
         <div className={`${itemClass} ${hasWeather ? 'sm:col-span-2' : ''}`}>
           <p className={labelClass}><CloudSun size={12} className="text-sky-300" />Weather</p>
-          <p className="mt-1 font-semibold text-neutral-200">
+          <p className="mt-1 font-semibold text-[var(--rc-text-primary)]">
             {weather ? `${weather.air_temp_avg ?? '—'}°C air · ${weather.track_temp_avg ?? '—'}°C track` : '—'}
           </p>
         </div>
@@ -287,24 +289,24 @@ function RaceContextPanel({ raceContext = {} }) {
 function RaceTimelinePanel({ raceTimeline = [] }) {
   const compact = raceTimeline.length > 0 && raceTimeline.length <= 4;
   return (
-    <div className={`rounded-xl border border-sky-500/25 bg-sky-500/5 ${compact ? 'p-3' : 'p-4'}`}>
-      <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-sky-100">
-        <Map size={14} className="text-sky-300" />
+    <div className={`rc-card rc-accent-rail rounded-xl ${compact ? 'p-3' : 'p-4'}`} style={{ '--accent-color': 'var(--rc-cyan)' }}>
+      <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--rc-cyan)]">
+        <Map size={14} className="text-[var(--rc-cyan)]" />
         Race Timeline
       </h3>
       <div className="grid gap-2">
         {!raceTimeline.length && (
-          <div className="rounded border border-neutral-800 px-3 py-2 text-xs text-neutral-500">No detailed timeline events available.</div>
+          <div className="rounded border border-[var(--rc-border)] px-3 py-2 text-xs text-[var(--rc-text-muted)]">No detailed timeline events available.</div>
         )}
         {raceTimeline.slice(0, 14).map((e, idx) => (
-          <div key={`${e.time}-${idx}`} className={`rounded border border-neutral-800 text-xs ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
+          <div key={`${e.time}-${idx}`} className={`rounded border border-[var(--rc-border)] bg-[rgba(13,17,26,0.55)] text-xs ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
             <div className="flex items-center justify-between gap-3">
-              <span className="font-semibold text-neutral-200">{e.event || e.status || 'Event'}</span>
-              <span className="font-mono text-neutral-500">{e.session_time || e.time || '—'}</span>
+              <span className="font-semibold text-[var(--rc-text-primary)]">{e.event || e.status || 'Event'}</span>
+              <span className="rc-tabular font-mono text-[var(--rc-text-muted)]">{e.session_time || e.time || '—'}</span>
             </div>
             <div className="mt-1 flex items-center justify-between gap-3">
-              <span className="text-neutral-400">{e.meaning || 'Race status update'}</span>
-              <span className="text-red-300">{e.impact || 'Info'}</span>
+              <span className="text-[var(--rc-text-secondary)]">{e.meaning || 'Race status update'}</span>
+              <span className={getImpactChipClass(e.impact)}>{e.impact || 'Info'}</span>
             </div>
           </div>
         ))}
@@ -318,16 +320,16 @@ function TeamBattlesPanel({ teamBattles = [] }) {
   const compact = teamBattles.length <= 2;
 
   return (
-    <div className={`rounded-xl border border-violet-500/25 bg-violet-500/5 ${compact ? 'p-3' : 'p-4'}`}>
-      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-violet-100">
-        <Swords size={14} className="text-violet-300" />
+    <div className={`rc-card rc-accent-rail rounded-xl ${compact ? 'p-3' : 'p-4'}`} style={{ '--accent-color': 'var(--rc-purple)' }}>
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--rc-purple)]">
+        <Swords size={14} className="text-[var(--rc-purple)]" />
         Team Battles
       </h3>
       <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
         {teamBattles.map((b) => (
-          <div key={b.team} className={`rounded-lg border border-neutral-700 bg-neutral-950/50 text-xs ${compact ? 'p-2.5' : 'p-3'}`}>
-            <p className="mb-1.5 font-bold text-neutral-200">{b.team}</p>
-            <p className="text-neutral-400">{b.driver1?.code} (P{b.driver1?.position || '—'}) vs {b.driver2?.code} (P{b.driver2?.position || '—'})</p>
+          <div key={b.team} className={`rounded-lg border bg-[rgba(13,17,26,0.58)] text-xs ${compact ? 'p-2.5' : 'p-3'}`} style={getTeamAccentStyle(b.team)}>
+            <p className="mb-1.5 font-bold text-[var(--rc-text-primary)]">{b.team}</p>
+            <p className="text-[var(--rc-text-secondary)]">{b.driver1?.code} (P{b.driver1?.position || '—'}) vs {b.driver2?.code} (P{b.driver2?.position || '—'})</p>
           </div>
         ))}
       </div>
@@ -336,19 +338,24 @@ function TeamBattlesPanel({ teamBattles = [] }) {
 }
 
 function AnalysisSummary({ label, text, request, mode }) {
+  const modeAccent = getModeAccent(mode);
+
   return (
-    <aside className="space-y-4 rounded-xl border border-neutral-800 bg-[#15151e]/70 p-4">
-      <div className="flex items-center gap-2 text-red-500">
-        <Info size={16} />
-        <h2 className="text-xs font-bold uppercase tracking-widest">{label}</h2>
+    <aside className="rc-card rc-card-elevated rc-accent-rail space-y-4 rounded-xl p-4" style={{ '--accent-color': modeAccent.color }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[var(--rc-cyan)]">
+          <Info size={16} />
+          <h2 className="text-xs font-bold uppercase tracking-widest">{label}</h2>
+        </div>
+        <span className="rc-meta-chip">AI Briefing</span>
       </div>
-      <p className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 text-sm leading-relaxed text-neutral-200">"{text}"</p>
+      <p className="rounded-lg border border-[var(--rc-border)] bg-[rgba(13,17,26,0.72)] p-3 text-sm leading-relaxed text-[var(--rc-text-primary)]">"{text}"</p>
       {request && (
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-neutral-800 bg-neutral-900/40 p-3 text-[11px] uppercase tracking-wider text-neutral-400 xl:grid-cols-4">
-          <span>{request.year || '--'}</span>
-          <span>{request.race || '--'}</span>
-          <span>{request.session || '--'}</span>
-          <span>{mode || 'head_to_head'}</span>
+        <div className="flex flex-wrap gap-2">
+          <span className="rc-meta-chip">{request.year || '--'}</span>
+          <span className="rc-meta-chip">{request.race || '--'}</span>
+          <span className="rc-meta-chip">{request.session || '--'}</span>
+          <span className="rc-meta-chip">{mode || 'head_to_head'}</span>
         </div>
       )}
     </aside>
@@ -357,12 +364,12 @@ function AnalysisSummary({ label, text, request, mode }) {
 
 function StructuredControls({ values, setValues, onAnalyze, loading, compact = false }) {
   const needsDrivers = values.mode === 'head_to_head' || values.mode === 'telemetry';
-  const inputClass = `w-full rounded-md border border-neutral-700 bg-neutral-900/70 px-3 text-sm focus:border-red-600 focus:outline-none ${compact ? 'py-1.5' : 'py-2'}`;
-  const labelClass = `mb-1 block text-[10px] uppercase tracking-widest text-neutral-500 ${compact ? 'sr-only md:not-sr-only' : ''}`;
+  const inputClass = `rc-input text-sm ${compact ? 'py-1.5' : 'py-2'}`;
+  const labelClass = `mb-1 block text-[10px] uppercase tracking-widest text-[var(--rc-text-muted)] ${compact ? 'sr-only md:not-sr-only' : ''}`;
 
   return (
-    <div className={`${compact ? 'rounded-lg border border-neutral-800 bg-[#15151e]/60 p-3' : 'rounded-xl border border-neutral-800 bg-[#15151e]/70 p-4'}`}>
-      {!compact && <p className="mb-2 text-xs uppercase tracking-widest text-neutral-400">Structured Analyzer</p>}
+    <div className={`${compact ? 'rc-card rounded-lg p-3' : 'rc-card rc-card-elevated rounded-xl p-4'}`}>
+      {!compact && <p className="mb-2 text-xs uppercase tracking-widest text-[var(--rc-text-secondary)]">Structured Analyzer</p>}
 
       <div className={`grid gap-2 ${needsDrivers ? 'grid-cols-2 md:grid-cols-4 xl:grid-cols-7' : 'grid-cols-2 md:grid-cols-4 xl:grid-cols-5'}`}>
         <div>
@@ -419,7 +426,7 @@ function StructuredControls({ values, setValues, onAnalyze, loading, compact = f
           <button
             onClick={onAnalyze}
             disabled={loading}
-            className="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+            className="rc-btn-primary w-full rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50"
           >
             {loading ? 'Analyzing...' : 'Analyze'}
           </button>
@@ -437,9 +444,9 @@ function CompactNLP({ query, setQuery, loading, onSubmit, placeholder }) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-md border border-neutral-700 bg-neutral-900/70 py-2 pl-3 pr-10 text-sm focus:border-red-600 focus:outline-none"
+        className="rc-input w-full py-2 pl-3 pr-10 text-sm"
       />
-      <button type="submit" disabled={loading} className="absolute right-1.5 top-1.5 rounded bg-red-600 p-1.5 hover:bg-red-700 disabled:opacity-50">
+      <button type="submit" disabled={loading} className="rc-btn-primary rc-focus absolute right-1.5 top-1.5 rounded p-1.5 disabled:opacity-50">
         {loading ? <Loader2 className="animate-spin" size={15} /> : <Search size={15} />}
       </button>
     </form>
@@ -474,6 +481,7 @@ export default function App() {
   ];
 
   const currentMode = result?.mode || structured.mode || 'head_to_head';
+  const modeAccent = getModeAccent(currentMode);
   const summaryLabel = getModeSummaryLabel(currentMode);
   const briefing = getBriefingText(result);
 
@@ -561,14 +569,14 @@ export default function App() {
 
   const renderHeadToHead = () => (
     <div className="grid gap-4 xl:grid-cols-[320px,1fr]">
-      <div className="space-y-4 xl:sticky xl:top-[112px] xl:z-20 xl:h-fit xl:self-start xl:rounded-lg xl:bg-[#0b0b10]/95 xl:p-1 xl:backdrop-blur-sm">
+      <div className="space-y-4 xl:sticky xl:top-[118px] xl:z-20 xl:h-fit xl:self-start xl:rounded-lg xl:bg-[rgba(13,17,26,0.88)] xl:p-1 xl:backdrop-blur-sm">
         <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
         <SpeedTrapPanel speedTrap={result?.speed_trap} />
         <TyreStrategyPanel tyreStrategy={result?.tyre_strategy} />
       </div>
 
       <div className="space-y-4 xl:relative xl:z-10">
-        <nav className="flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg border border-neutral-800 bg-[#15151e]/70 p-2">
+        <nav className="rc-card flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg p-2">
           {[
             { id: 'insights', label: 'Insights', icon: <Info size={14} /> },
             { id: 'track', label: 'Track Map', icon: <Map size={14} /> },
@@ -576,9 +584,10 @@ export default function App() {
             <button
               key={tab.id}
               onClick={() => setHeadToHeadTab(tab.id)}
-              className={`flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-xs uppercase tracking-wider ${
-                headToHeadTab === tab.id ? 'bg-red-600/20 text-white' : 'text-neutral-400 hover:text-neutral-200'
+              className={`rc-focus flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-xs uppercase tracking-wider ${
+                headToHeadTab === tab.id ? 'text-white' : 'text-[var(--rc-text-secondary)] hover:text-[var(--rc-text-primary)]'
               }`}
+              style={headToHeadTab === tab.id ? { background: 'rgba(34, 211, 238, 0.18)', border: '1px solid rgba(34, 211, 238, 0.45)' } : undefined}
             >
               {tab.icon}
               {tab.label}
@@ -586,8 +595,8 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/35 px-3 py-2 text-[11px] text-neutral-400">
-          Head-to-Head now focuses on direct driver comparison only. Use dedicated modes for full <span className="text-neutral-200">Results</span>, <span className="text-neutral-200">Telemetry</span>, and <span className="text-neutral-200">Race Overview</span> details.
+        <div className="rc-card rounded-lg px-3 py-2 text-[11px] text-[var(--rc-text-secondary)]">
+          Head-to-Head now focuses on direct driver comparison only. Use dedicated modes for full <span className="text-[var(--rc-text-primary)]">Results</span>, <span className="text-[var(--rc-text-primary)]">Telemetry</span>, and <span className="text-[var(--rc-text-primary)]">Race Overview</span> details.
         </div>
 
         {headToHeadTab === 'insights' && (
@@ -619,12 +628,12 @@ export default function App() {
             {hasData ? (
               <TyreStrategyPanel tyreStrategy={result?.tyre_strategy} />
             ) : (
-              <div className="rounded-xl border border-neutral-800 bg-neutral-900/45 p-4 text-sm text-neutral-300">
+              <div className="rc-card rounded-xl p-4 text-sm text-[var(--rc-text-secondary)]">
                 Strategy data is limited for this session. Showing available race context and results.
               </div>
             )}
             {inferred && (
-              <div className="rounded-lg border border-neutral-800 bg-neutral-900/45 p-3 text-xs text-neutral-400">
+              <div className="rc-card rounded-lg p-3 text-xs text-[var(--rc-text-secondary)]">
                 Drivers were inferred from top finishers for strategy comparison.
               </div>
             )}
@@ -659,16 +668,18 @@ export default function App() {
     <div className="space-y-4">
       <AnalysisSummary label={summaryLabel} text={briefing} request={result?.request} mode={currentMode} />
       {hasDualResults && (
-        <div className="inline-flex rounded-md border border-neutral-800 bg-[#15151e]/70 p-1 text-xs uppercase tracking-wider">
+        <div className="rc-card inline-flex rounded-md p-1 text-xs uppercase tracking-wider">
           <button
             onClick={() => setResultsView('race')}
-            className={`rounded px-3 py-1.5 ${resultsView === 'race' ? 'bg-red-600/20 text-white' : 'text-neutral-400'}`}
+            className={`rc-focus rounded px-3 py-1.5 ${resultsView === 'race' ? 'text-white' : 'text-[var(--rc-text-secondary)]'}`}
+            style={resultsView === 'race' ? { background: 'rgba(245, 197, 66, 0.16)', border: '1px solid rgba(245, 197, 66, 0.45)' } : undefined}
           >
             Race Results
           </button>
           <button
             onClick={() => setResultsView('session')}
-            className={`rounded px-3 py-1.5 ${resultsView === 'session' ? 'bg-red-600/20 text-white' : 'text-neutral-400'}`}
+            className={`rc-focus rounded px-3 py-1.5 ${resultsView === 'session' ? 'text-white' : 'text-[var(--rc-text-secondary)]'}`}
+            style={resultsView === 'session' ? { background: 'rgba(245, 197, 66, 0.16)', border: '1px solid rgba(245, 197, 66, 0.45)' } : undefined}
           >
             Session Results
           </button>
@@ -688,18 +699,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0b10] font-sans text-white selection:bg-red-500/30">
+    <div className="rc-app-shell min-h-screen font-sans text-[var(--rc-text-primary)] selection:bg-[rgba(225,6,0,0.35)]">
       {!hasSearched ? (
-        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-4 px-4 py-8">
-          <div className="mb-1 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-red-600 text-2xl font-black italic">F1</div>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">F1 AI Race Analyst</h1>
+        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-5 px-4 py-8">
+          <div className="mb-2 flex flex-col items-center gap-2 text-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-[var(--rc-red)] text-2xl font-black italic">F1</div>
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">F1 AI Race Analyst</h1>
+            </div>
+            <p className="max-w-2xl text-sm text-[var(--rc-text-secondary)]">Race Control Neon briefing console for natural-language and structured Formula 1 analysis.</p>
           </div>
 
           <StructuredControls values={structured} setValues={setStructured} onAnalyze={handleStructuredAnalyze} loading={loading} />
 
-          <div className="w-full max-w-5xl rounded-lg border border-neutral-800 bg-[#15151e]/50 p-3">
-            <p className="mb-2 text-xs uppercase tracking-widest text-neutral-500">Or ask a question</p>
+          <div className="rc-card rc-card-elevated w-full max-w-5xl rounded-lg p-3 md:p-4">
+            <p className="mb-2 text-xs uppercase tracking-widest text-[var(--rc-cyan)]">AI Command Console</p>
             <CompactNLP
               query={query}
               setQuery={setQuery}
@@ -715,7 +729,7 @@ export default function App() {
                 key={tag}
                 type="button"
                 onClick={() => setQuery(tag)}
-                className="rounded border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-[11px] text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                className="rc-focus rounded-full border border-[var(--rc-border)] bg-[rgba(13,17,26,0.82)] px-2.5 py-1 text-[11px] text-[var(--rc-text-secondary)] transition hover:border-[var(--rc-cyan)]/50 hover:text-[var(--rc-text-primary)]"
               >
                 {tag}
               </button>
@@ -724,16 +738,16 @@ export default function App() {
         </div>
       ) : (
         <>
-          <header className="sticky top-0 z-50 border-b border-neutral-800 bg-[#15151e]/95 px-3 py-3 backdrop-blur">
+          <header className="rc-toolbar sticky top-0 z-50 px-3 py-3">
             <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-red-600 text-lg font-black italic">F1</div>
-                  <p className="text-sm font-bold uppercase tracking-wider">Race Analyst</p>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-[var(--rc-red)] text-lg font-black italic">F1</div>
+                  <p className="text-sm font-bold uppercase tracking-wider" style={{ color: modeAccent.color }}>Race Analyst</p>
                 </div>
                 <button
                   onClick={() => setShowToolbarNlp((v) => !v)}
-                  className="rounded border border-neutral-700 px-2.5 py-1.5 text-xs uppercase tracking-wider text-neutral-300 hover:text-white"
+                  className="rc-focus rounded border border-[var(--rc-border)] px-2.5 py-1.5 text-xs uppercase tracking-wider text-[var(--rc-text-secondary)] hover:text-white"
                 >
                   {showToolbarNlp ? 'Hide query' : 'Ask'}
                 </button>
@@ -760,20 +774,20 @@ export default function App() {
           </header>
 
           {error && (
-            <div className="mx-auto my-4 flex w-full max-w-[1600px] items-center gap-2 rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-200">
-              <AlertCircle size={16} /> {error}
+            <div className="mx-auto my-4 flex w-full max-w-[1600px] items-center gap-2 rounded-lg border border-[rgba(225,6,0,0.55)] bg-[rgba(225,6,0,0.12)] p-3 text-sm text-[var(--rc-text-primary)]">
+              <AlertCircle size={16} className="text-[var(--rc-red)]" /> {error}
             </div>
           )}
 
           {loading && !result ? (
-            <div className="mx-auto w-full max-w-[1600px] animate-pulse space-y-3 p-4">
-              <div className="h-10 rounded-md bg-neutral-900" />
-              <div className="h-80 rounded-xl bg-neutral-900" />
+            <div className="mx-auto w-full max-w-[1600px] space-y-3 p-4">
+              <div className="rc-skeleton h-10 rounded-md" />
+              <div className="rc-skeleton h-80 rounded-xl" />
             </div>
           ) : result ? (
             <main className="mx-auto w-full max-w-[1600px] p-4">{renderMainContent()}</main>
           ) : (
-            <div className="mx-auto w-full max-w-7xl p-6 text-neutral-400">Search to load analysis.</div>
+            <div className="mx-auto w-full max-w-7xl p-6 text-[var(--rc-text-secondary)]">Search to load analysis.</div>
           )}
         </>
       )}

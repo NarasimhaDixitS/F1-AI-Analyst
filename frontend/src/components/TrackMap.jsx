@@ -1,4 +1,5 @@
 import React from 'react';
+import { getTeamColor } from '../utils/raceTheme';
 
 function scaleSeries(values = [], minPx, maxPx, invert = false) {
   if (!values.length) return [];
@@ -27,7 +28,7 @@ export default function TrackMap({ data }) {
 
   if (!hasTrackData) {
     return (
-      <div className="h-full min-h-[320px] rounded-xl border border-neutral-800 bg-neutral-900/40 flex items-center justify-center text-sm text-neutral-400">
+      <div className="rc-card flex h-full min-h-[320px] items-center justify-center rounded-xl text-sm text-[var(--rc-text-secondary)]">
         Track map is unavailable for this session.
       </div>
     );
@@ -44,18 +45,20 @@ export default function TrackMap({ data }) {
 
   const path1 = buildLinePath(x1, y1);
   const path2 = buildLinePath(x2, y2);
+  const d1Color = getTeamColor(data?.driver1?.team || data?.driver1?.name);
+  const d2Color = getTeamColor(data?.driver2?.team || data?.driver2?.name);
 
   return (
     <div className="flex flex-col items-center justify-center h-full">
-      <div className="mb-3 flex gap-4 text-xs uppercase tracking-widest text-neutral-400">
-        <span className="text-blue-400">{data.driver1.name}</span>
-        <span className="text-yellow-400">{data.driver2.name}</span>
+      <div className="mb-3 flex gap-4 text-xs uppercase tracking-widest text-[var(--rc-text-secondary)]">
+        <span style={{ color: d1Color }}>{data.driver1.name}</span>
+        <span style={{ color: d2Color }}>{data.driver2.name}</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[500px] w-full rounded-xl border border-neutral-800 bg-neutral-900/40">
-        <path d={path1} stroke="#3b82f6" strokeWidth="3" fill="none" />
-        <path d={path2} stroke="#eab308" strokeWidth="2.6" fill="none" />
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[500px] w-full rounded-xl border border-[var(--rc-border)] bg-[rgba(13,17,26,0.55)]">
+        <path d={path1} stroke={d1Color} strokeWidth="3" fill="none" />
+        <path d={path2} stroke={d2Color} strokeWidth="2.6" fill="none" />
       </svg>
-      <p className="text-xs text-neutral-500 mt-2 uppercase tracking-widest">
+      <p className="mt-2 text-xs uppercase tracking-widest text-[var(--rc-text-muted)]">
         GPS Coordinates Rendered from FastF1 Telemetry
       </p>
     </div>
