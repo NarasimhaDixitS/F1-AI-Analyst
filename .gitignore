@@ -62,3 +62,4 @@ backend/cache/
 # -----------------------------
 AWS_DOMAIN_BOOTSTRAP_GUIDE.md
 
+backend/response_cache/*.json

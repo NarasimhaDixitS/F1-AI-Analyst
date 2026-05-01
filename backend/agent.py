@@ -2,11 +2,16 @@ from openai import AsyncOpenAI
 import json
 import os
 import re
+import hashlib
 from f1_service import F1DataService
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 XAI_BASE_URL = "https://api.x.ai/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+RESPONSE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "response_cache")
+RESPONSE_CACHE_VERSION = "v1"
+
+os.makedirs(RESPONSE_CACHE_DIR, exist_ok=True)
 
 DRIVER_ALIASES = {
     "VER": ["ver", "verstappen", "max"],
@@ -247,6 +252,50 @@ async def _chat_with_fallback(messages, tools=None, tool_choice=None):
 
     raise RuntimeError("All LLM providers failed. " + " | ".join(errors))
 
+
+def _normalize_request_for_cache(args: dict):
+    return {
+        "year": int(args.get("year")),
+        "race": str(args.get("race", "")).strip(),
+        "session": str(args.get("session", "")).strip(),
+        "driver1": str(args.get("driver1", "")).strip().upper(),
+        "driver2": str(args.get("driver2", "")).strip().upper(),
+    }
+
+
+def _build_response_cache_path(args: dict):
+    normalized = _normalize_request_for_cache(args)
+    key_raw = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    key_with_version = f"{RESPONSE_CACHE_VERSION}|{key_raw}"
+    cache_id = hashlib.sha1(key_with_version.encode("utf-8")).hexdigest()
+    return os.path.join(RESPONSE_CACHE_DIR, f"{cache_id}.json"), key_with_version
+
+
+def _read_cached_response(args: dict):
+    cache_path, cache_key = _build_response_cache_path(args)
+    if not os.path.exists(cache_path):
+        print(f"[response-cache] miss key={cache_key}")
+        return None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        print(f"[response-cache] hit key={cache_key}")
+        return payload
+    except Exception as exc:
+        print(f"[response-cache] read-failed key={cache_key} err={exc}")
+        return None
+
+
+def _write_cached_response(args: dict, payload: dict):
+    cache_path, cache_key = _build_response_cache_path(args)
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        print(f"[response-cache] stored key={cache_key}")
+    except Exception as exc:
+        print(f"[response-cache] write-failed key={cache_key} err={exc}")
+
 TOOLS = [
     {
         "type": "function",
@@ -313,10 +362,16 @@ async def process_query(user_query: str):
                 "provider": "rule_based",
                 "model": "none",
                 "type": "error",
+                "cache": {"response": "miss"},
             }
 
         args = parsed_args
         extraction_provider = {"name": "rule_based", "model": "none"}
+
+    cached_response = _read_cached_response(args)
+    if cached_response is not None:
+        cached_response["cache"] = {"response": "hit"}
+        return cached_response
 
     try:
         # 2. Execute Backend Tool
@@ -329,41 +384,76 @@ async def process_query(user_query: str):
         race_context_payload = {}
         speed_trap_payload = {}
         tyre_strategy_payload = {}
+
+        request_sessions = {}
+
+        def _get_request_session(session_name: str, weather: bool = False):
+            key = (
+                int(args["year"]),
+                str(args["race"]).strip(),
+                str(session_name).strip(),
+                bool(weather),
+            )
+            if key not in request_sessions:
+                request_sessions[key] = F1DataService.load_session(
+                    year=args["year"],
+                    race=args["race"],
+                    session=session_name,
+                    weather=weather,
+                )
+            return request_sessions[key]
+
+        selected_session = _get_request_session(
+            args["session"],
+            weather=False,
+        )
+        race_session = _get_request_session("Race", weather=False)
+        qualifying_session = _get_request_session("Qualifying", weather=False)
+
         data_payload = F1DataService.compare_drivers(
             year=args["year"],
             race=args["race"],
             session=args["session"],
             driver1=args["driver1"],
             driver2=args["driver2"],
+            session_obj=selected_session,
         )
         results_payload = F1DataService.get_results(
             year=args["year"],
             race=args["race"],
             session=args["session"],
+            session_obj=selected_session,
         )
         race_results_payload = F1DataService.get_results(
             year=args["year"],
             race=args["race"],
             session="Race",
+            session_obj=race_session,
         )
         head_to_head_payload = F1DataService.get_head_to_head(
             year=args["year"],
             race=args["race"],
             driver1=args["driver1"],
             driver2=args["driver2"],
+            quali_session=qualifying_session,
+            race_session=race_session,
         )
         race_timeline_payload = F1DataService.get_race_timeline(
             year=args["year"],
             race=args["race"],
+            race_session=race_session,
         )
         team_battles_payload = F1DataService.get_team_battles(
             year=args["year"],
             race=args["race"],
             session="Race",
+            session_obj=race_session,
         )
         race_context_payload = F1DataService.get_race_context(
             year=args["year"],
             race=args["race"],
+            race_session=race_session,
+            quali_session=qualifying_session,
         )
         speed_trap_payload = F1DataService.get_speed_trap_summary(
             year=args["year"],
@@ -371,12 +461,14 @@ async def process_query(user_query: str):
             session=args["session"],
             driver1=args["driver1"],
             driver2=args["driver2"],
+            session_obj=selected_session,
         )
         tyre_strategy_payload = F1DataService.get_tyre_strategy(
             year=args["year"],
             race=args["race"],
             driver1=args["driver1"],
             driver2=args["driver2"],
+            race_session=race_session,
         )
     except Exception as exc:
         return {
@@ -387,6 +479,7 @@ async def process_query(user_query: str):
             "provider": extraction_provider["name"],
             "model": extraction_provider["model"],
             "type": "error",
+            "cache": {"response": "miss"},
         }
 
     # 3. Generate Explanation based on Data
@@ -408,7 +501,7 @@ async def process_query(user_query: str):
     if extraction_error and extraction_provider["name"] == "rule_based":
         explanation_text += " Query parsing used deterministic fallback extraction."
 
-    return {
+    response_payload = {
         "explanation": explanation_text,
         "data": data_payload,
         "results": race_results_payload or results_payload,
@@ -436,3 +529,7 @@ async def process_query(user_query: str):
         },
         "type": "comparison",
     }
+
+    _write_cached_response(args, response_payload)
+    response_payload["cache"] = {"response": "miss"}
+    return response_payload

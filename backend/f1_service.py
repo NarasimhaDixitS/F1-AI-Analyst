@@ -2,12 +2,17 @@ import fastf1
 import pandas as pd
 import numpy as np
 import os
+import threading
 
 # Enable persistent caching
 os.makedirs("cache", exist_ok=True)
 fastf1.Cache.enable_cache("cache")
 
 class F1DataService:
+    _SESSION_CACHE = {}
+    _SESSION_CACHE_LOCK = threading.Lock()
+    TELEMETRY_MAX_POINTS = 1800
+
     STATUS_MAP = {
         '1': 'Track Clear',
         '2': 'Yellow Flag',
@@ -69,14 +74,77 @@ class F1DataService:
         return match.iloc[0]
 
     @staticmethod
+    def _build_session_cache_key(year: int, race: str, session: str, weather: bool = False):
+        return (
+            int(year),
+            str(race).strip(),
+            str(session).strip(),
+            bool(weather),
+        )
+
+    @staticmethod
+    def _downsample_aligned_telemetry(telemetry_df: pd.DataFrame, max_points: int = None):
+        if telemetry_df is None or telemetry_df.empty:
+            return {
+                "distance": [],
+                "speed": [],
+                "throttle": [],
+                "brake": [],
+                "x": [],
+                "y": [],
+            }
+
+        max_points = max_points or F1DataService.TELEMETRY_MAX_POINTS
+        total_points = len(telemetry_df)
+        if total_points <= 0:
+            return {
+                "distance": [],
+                "speed": [],
+                "throttle": [],
+                "brake": [],
+                "x": [],
+                "y": [],
+            }
+
+        if total_points <= max_points:
+            sampled = telemetry_df
+        else:
+            sample_idx = np.linspace(0, total_points - 1, num=max_points, dtype=int)
+            sampled = telemetry_df.iloc[np.unique(sample_idx)]
+
+        return {
+            "distance": sampled['Distance'].fillna(0).tolist() if 'Distance' in sampled else [],
+            "speed": sampled['Speed'].fillna(0).tolist() if 'Speed' in sampled else [],
+            "throttle": sampled['Throttle'].fillna(0).tolist() if 'Throttle' in sampled else [],
+            "brake": sampled['Brake'].fillna(0).tolist() if 'Brake' in sampled else [],
+            "x": sampled['X'].fillna(0).tolist() if 'X' in sampled else [],
+            "y": sampled['Y'].fillna(0).tolist() if 'Y' in sampled else [],
+        }
+
+    @staticmethod
     def load_session(year: int, race: str, session: str, weather: bool = False):
+        cache_key = F1DataService._build_session_cache_key(year, race, session, weather)
+
+        with F1DataService._SESSION_CACHE_LOCK:
+            cached_session = F1DataService._SESSION_CACHE.get(cache_key)
+
+        if cached_session is not None:
+            print(f"[session-cache] hit key={cache_key}")
+            return cached_session
+
+        print(f"[session-cache] miss key={cache_key}")
         session_obj = fastf1.get_session(year, race, session)
         session_obj.load(telemetry=True, weather=weather, messages=False)
+
+        with F1DataService._SESSION_CACHE_LOCK:
+            F1DataService._SESSION_CACHE[cache_key] = session_obj
+
         return session_obj
 
     @staticmethod
-    def compare_drivers(year: int, race: str, session: str, driver1: str, driver2: str):
-        session_obj = F1DataService.load_session(year, race, session)
+    def compare_drivers(year: int, race: str, session: str, driver1: str, driver2: str, session_obj=None):
+        if session_obj is None:
+            session_obj = F1DataService.load_session(year, race, session)
         
         laps_d1 = session_obj.laps.pick_driver(driver1)
         laps_d2 = session_obj.laps.pick_driver(driver2)
@@ -90,36 +158,26 @@ class F1DataService:
         # Calculate Delta Time (simplified for JSON transport)
         # In production, use fastf1.utils.delta_time
         
+        tel_payload_d1 = F1DataService._downsample_aligned_telemetry(tel_d1)
+        tel_payload_d2 = F1DataService._downsample_aligned_telemetry(tel_d2)
+
         return {
             "driver1": {
                 "name": driver1,
                 "lap_time": F1DataService._safe_time_str(fastest_d1['LapTime']),
-                "telemetry": {
-                    "distance": tel_d1['Distance'].fillna(0).tolist(),
-                    "speed": tel_d1['Speed'].fillna(0).tolist(),
-                    "throttle": tel_d1['Throttle'].fillna(0).tolist(),
-                    "brake": tel_d1['Brake'].fillna(0).tolist(),
-                    "x": tel_d1['X'].fillna(0).tolist() if 'X' in tel_d1 else [],
-                    "y": tel_d1['Y'].fillna(0).tolist() if 'Y' in tel_d1 else []
-                }
+                "telemetry": tel_payload_d1,
             },
             "driver2": {
                 "name": driver2,
                 "lap_time": F1DataService._safe_time_str(fastest_d2['LapTime']),
-                "telemetry": {
-                    "distance": tel_d2['Distance'].fillna(0).tolist(),
-                    "speed": tel_d2['Speed'].fillna(0).tolist(),
-                    "throttle": tel_d2['Throttle'].fillna(0).tolist(),
-                    "brake": tel_d2['Brake'].fillna(0).tolist(),
-                    "x": tel_d2['X'].fillna(0).tolist() if 'X' in tel_d2 else [],
-                    "y": tel_d2['Y'].fillna(0).tolist() if 'Y' in tel_d2 else []
-                }
+                "telemetry": tel_payload_d2,
             }
         }
 
     @staticmethod
-    def get_results(year: int, race: str, session: str):
-        session_obj = F1DataService.load_session(year, race, session)
+    def get_results(year: int, race: str, session: str, session_obj=None):
+        if session_obj is None:
+            session_obj = F1DataService.load_session(year, race, session)
         results = session_obj.results
         available_columns = [
             col for col in ['Abbreviation', 'Position', 'Time', 'Status', 'Points']
@@ -128,7 +186,7 @@ class F1DataService:
         return results[available_columns].fillna("").to_dict(orient="records")
 
     @staticmethod
-    def get_head_to_head(year: int, race: str, driver1: str, driver2: str):
+    def get_head_to_head(year: int, race: str, driver1: str, driver2: str, quali_session=None, race_session=None):
         payload = {
             "drivers": [driver1, driver2],
             "qualifying": None,
@@ -138,7 +196,7 @@ class F1DataService:
 
         # Qualifying H2H
         try:
-            quali = F1DataService.load_session(year, race, "Qualifying")
+            quali = quali_session or F1DataService.load_session(year, race, "Qualifying")
             q_results = quali.results
 
             q_row_d1 = F1DataService._get_driver_result_row(q_results, driver1)
@@ -170,7 +228,7 @@ class F1DataService:
 
         # Race H2H
         try:
-            race_session = F1DataService.load_session(year, race, "Race", weather=True)
+            race_session = race_session or F1DataService.load_session(year, race, "Race", weather=True)
             race_results = race_session.results
 
             r_row_d1 = F1DataService._get_driver_result_row(race_results, driver1)
@@ -221,9 +279,9 @@ class F1DataService:
         return payload
 
     @staticmethod
-    def get_race_timeline(year: int, race: str):
+    def get_race_timeline(year: int, race: str, race_session=None):
         try:
-            race_session = F1DataService.load_session(year, race, "Race")
+            race_session = race_session or F1DataService.load_session(year, race, "Race")
             track_status = race_session.track_status
             if track_status is None or track_status.empty:
                 return []
@@ -265,7 +323,7 @@ class F1DataService:
             return []
 
     @staticmethod
-    def get_race_context(year: int, race: str):
+    def get_race_context(year: int, race: str, race_session=None, quali_session=None):
         payload = {
             "winner": None,
             "podium": [],
@@ -275,7 +333,7 @@ class F1DataService:
         }
 
         try:
-            race_session = F1DataService.load_session(year, race, "Race")
+            race_session = race_session or F1DataService.load_session(year, race, "Race")
             results = race_session.results
             if results is not None and not results.empty:
                 sorted_results = results.sort_values('Position')
@@ -322,7 +380,7 @@ class F1DataService:
             pass
 
         try:
-            quali = F1DataService.load_session(year, race, "Qualifying")
+            quali = quali_session or F1DataService.load_session(year, race, "Qualifying")
             q_results = quali.results
             if q_results is not None and not q_results.empty:
                 q_sorted = q_results.sort_values('Position')
@@ -338,9 +396,10 @@ class F1DataService:
         return payload
 
     @staticmethod
-    def get_team_battles(year: int, race: str, session: str = "Race"):
+    def get_team_battles(year: int, race: str, session: str = "Race", session_obj=None):
         try:
-            session_obj = F1DataService.load_session(year, race, session)
+            if session_obj is None:
+                session_obj = F1DataService.load_session(year, race, session)
             results = session_obj.results
             if results is None or results.empty or 'TeamName' not in results.columns:
                 return []
@@ -374,9 +433,10 @@ class F1DataService:
             return []
 
     @staticmethod
-    def get_speed_trap_summary(year: int, race: str, session: str, driver1: str, driver2: str):
+    def get_speed_trap_summary(year: int, race: str, session: str, driver1: str, driver2: str, session_obj=None):
         try:
-            session_obj = F1DataService.load_session(year, race, session)
+            if session_obj is None:
+                session_obj = F1DataService.load_session(year, race, session)
             lap1 = session_obj.laps.pick_driver(driver1).pick_fastest()
             lap2 = session_obj.laps.pick_driver(driver2).pick_fastest()
 
@@ -444,7 +504,7 @@ class F1DataService:
             return []
 
     @staticmethod
-    def get_tyre_strategy(year: int, race: str, driver1: str, driver2: str):
+    def get_tyre_strategy(year: int, race: str, driver1: str, driver2: str, race_session=None):
         payload = {
             "driver1": {"code": driver1, "stints": []},
             "driver2": {"code": driver2, "stints": []},
@@ -452,7 +512,7 @@ class F1DataService:
         }
 
         try:
-            race_session = F1DataService.load_session(year, race, "Race")
+            race_session = race_session or F1DataService.load_session(year, race, "Race")
 
             stints1 = F1DataService._build_driver_stints(race_session, driver1)
             stints2 = F1DataService._build_driver_stints(race_session, driver2)
