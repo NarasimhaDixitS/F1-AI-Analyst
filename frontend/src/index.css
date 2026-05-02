@@ -213,6 +213,32 @@ body::before {
   max-width: min(62vw, 520px);
 }
 
+.rc-toolbar-logo .rc-brand-logo-image {
+  max-height: 64px;
+}
+
+.rc-toolbar-header-row {
+  min-height: 58px;
+}
+
+.rc-toolbar-identity-pill {
+  justify-content: flex-start;
+}
+
+.rc-toolbar-setup-btn {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.08) inset,
+    0 4px 14px rgba(34, 211, 238, 0.18);
+  background-image: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.08));
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.rc-toolbar-setup-btn:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.16) inset,
+    0 6px 18px rgba(34, 211, 238, 0.24);
+}
+
 .rc-toolbar-brand-divider {
   font-size: clamp(13px, 1.5vw, 18px);
   line-height: 1;
@@ -410,6 +436,23 @@ body::before {
 @media (max-width: 768px) {
   .rc-brand-logo-compact .rc-brand-logo-image {
     max-height: 68px;
+  }
+
+  .rc-toolbar-logo .rc-brand-logo-image {
+    max-height: 52px;
+  }
+
+  .rc-toolbar-header-row {
+    min-height: 0;
+  }
+
+  .rc-toolbar-identity-pill {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .rc-toolbar-setup-btn {
+    padding-inline: 10px;
   }
 
   .rc-brand-logo-hero .rc-brand-logo-image {

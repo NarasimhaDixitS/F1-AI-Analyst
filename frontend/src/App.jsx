@@ -11,7 +11,7 @@ import {
   Loader2,
   Map,
   Medal,
-  Search,
+  SlidersHorizontal,
   Swords,
   Timer,
   Trophy,
@@ -367,14 +367,14 @@ function AnalysisSummary({ label, text, request, mode }) {
 
 function StructuredControls({ values, setValues, onAnalyze, loading, compact = false }) {
   const needsDrivers = values.mode === 'head_to_head' || values.mode === 'telemetry';
-  const inputClass = `rc-input text-sm ${compact ? 'py-1.5' : 'py-2'}`;
-  const labelClass = `mb-1 block text-[10px] uppercase tracking-widest text-[var(--rc-text-muted)] ${compact ? 'sr-only md:not-sr-only' : ''}`;
+  const inputClass = `rc-input ${compact ? 'py-1.5 text-sm' : 'py-3 text-base'}`;
+  const labelClass = `mb-1 block ${compact ? 'text-[10px]' : 'text-xs'} uppercase tracking-widest text-[var(--rc-text-muted)] ${compact ? 'sr-only md:not-sr-only' : ''}`;
 
   return (
-    <div className={`${compact ? 'rc-card rounded-lg p-3' : 'rc-card rc-card-elevated rounded-xl p-4'}`}>
-      {!compact && <p className="mb-2 text-xs uppercase tracking-widest text-[var(--rc-text-secondary)]">Structured Analyzer</p>}
+    <div className={`${compact ? 'rc-card rounded-lg p-3' : 'rc-card rc-card-elevated w-full max-w-5xl rounded-xl p-5 md:p-6'}`}>
+      {!compact && <p className="mb-3 text-sm uppercase tracking-widest text-[var(--rc-text-secondary)]">Structured Analyzer</p>}
 
-      <div className={`grid gap-2 ${needsDrivers ? 'grid-cols-2 md:grid-cols-4 xl:grid-cols-7' : 'grid-cols-2 md:grid-cols-4 xl:grid-cols-5'}`}>
+      <div className={`grid ${compact ? 'gap-2' : 'gap-3'} ${needsDrivers ? 'grid-cols-2 md:grid-cols-4 xl:grid-cols-7' : 'grid-cols-2 md:grid-cols-4 xl:grid-cols-5'}`}>
         <div>
           <label className={labelClass}>Year</label>
           <input
@@ -429,7 +429,7 @@ function StructuredControls({ values, setValues, onAnalyze, loading, compact = f
           <button
             onClick={onAnalyze}
             disabled={loading}
-            className="rc-btn-primary w-full rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50"
+            className={`rc-btn-primary w-full rounded-md font-semibold disabled:opacity-50 ${compact ? 'px-3 py-2 text-sm' : 'px-4 py-3 text-base'}`}
           >
             {loading ? 'Analyzing...' : 'Analyze'}
           </button>
@@ -439,34 +439,16 @@ function StructuredControls({ values, setValues, onAnalyze, loading, compact = f
   );
 }
 
-function CompactNLP({ query, setQuery, loading, onSubmit, placeholder }) {
-  return (
-    <form onSubmit={onSubmit} className="relative w-full">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
-        className="rc-input w-full py-2 pl-3 pr-10 text-sm"
-      />
-      <button type="submit" disabled={loading} className="rc-btn-primary rc-focus absolute right-1.5 top-1.5 rounded p-1.5 disabled:opacity-50">
-        {loading ? <Loader2 className="animate-spin" size={15} /> : <Search size={15} />}
-      </button>
-    </form>
-  );
-}
-
 export default function App() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const [error, setError] = useState(null);
   const [headToHeadTab, setHeadToHeadTab] = useState('insights');
   const [resultsView, setResultsView] = useState('race');
-  const [showToolbarNlp, setShowToolbarNlp] = useState(false);
 
   const [structured, setStructured] = useState({
     year: 2024,
@@ -478,7 +460,6 @@ export default function App() {
   });
 
   const currentMode = result?.mode || structured.mode || 'head_to_head';
-  const modeAccent = getModeAccent(currentMode);
   const summaryLabel = getModeSummaryLabel(currentMode);
   const briefing = getBriefingText(result);
   const identityDrivers = useMemo(() => {
@@ -520,27 +501,6 @@ export default function App() {
     return result.results || result.session_results || [];
   };
 
-  const handleNaturalLanguageSearch = async (e) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-
-    setHasSearched(true);
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await axios.post(`${API_BASE}/api/analyze`, { query });
-      const normalized = normalizeResultPayload(res.data);
-      setResult(normalized);
-      setHeadToHeadTab('insights');
-      setResultsView('race');
-    } catch (err) {
-      console.error('Analysis failed', err);
-      setError('Failed to fetch F1 data. Ensure backend is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleStructuredAnalyze = async () => {
     setHasSearched(true);
     setLoading(true);
@@ -564,6 +524,9 @@ export default function App() {
       if (normalized?.type === 'error') {
         const detail = (normalized.errors || []).join(', ');
         setError(`${normalized.message || 'Structured analyze failed'}${detail ? `: ${detail}` : ''}`);
+        setControlsExpanded(true);
+      } else {
+        setControlsExpanded(false);
       }
 
       setResult(normalized);
@@ -572,6 +535,7 @@ export default function App() {
     } catch (err) {
       console.error('Structured analysis failed', err);
       setError('Structured analyze failed. Check backend logs and input selections.');
+      setControlsExpanded(true);
     } finally {
       setLoading(false);
     }
@@ -717,55 +681,61 @@ export default function App() {
     return renderHeadToHead();
   };
 
+  const handleBackToLanding = () => {
+    setHasSearched(false);
+    setControlsExpanded(false);
+    setError(null);
+    setResult(null);
+  };
+
   return (
     <div className="rc-app-shell min-h-screen font-sans text-[var(--rc-text-primary)] selection:bg-[rgba(225,6,0,0.35)]">
       {!hasSearched ? (
-        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-5 px-4 py-8">
-          <div className="mb-2 flex flex-col items-center gap-2 text-center">
-            <ThrottleLabsLogo variant="hero" showDomain className="mb-1" />
-            <p className="max-w-2xl text-sm text-[var(--rc-text-secondary)]">Race Control Neon briefing console for natural-language and structured Formula 1 analysis.</p>
+        <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-2 px-4 py-6">
+          <div className="mb-0 flex flex-col items-center gap-1 text-center">
+            <ThrottleLabsLogo variant="hero" showDomain className="mb-0" imgClassName="!max-h-[230px] md:!max-h-[250px]" />
           </div>
 
           <StructuredControls values={structured} setValues={setStructured} onAnalyze={handleStructuredAnalyze} loading={loading} />
         </div>
       ) : (
         <>
-          <header className="rc-toolbar sticky top-0 z-50 px-3 py-3">
-            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-                  <ThrottleLabsLogo variant="compact" showDomain className="rc-toolbar-logo" />
-                  <span className="rc-toolbar-brand-divider" aria-hidden="true">|</span>
-                  <p className="rc-toolbar-brand-subtitle" style={{ color: modeAccent.color }}>
-                    F1 Race Analyst
-                  </p>
-                </div>
+          <header className="rc-toolbar sticky top-0 z-50 px-3 py-2">
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-1.5">
+              <div className="rc-toolbar-header-row flex flex-wrap items-center gap-2 md:gap-3">
                 <button
-                  onClick={() => setShowToolbarNlp((v) => !v)}
-                  className="rc-focus rounded border border-[var(--rc-border)] px-2.5 py-1.5 text-xs uppercase tracking-wider text-[var(--rc-text-secondary)] hover:text-white"
+                  type="button"
+                  onClick={handleBackToLanding}
+                  className="rc-focus shrink-0 rounded-md"
+                  aria-label="Go back to landing page"
                 >
-                  {showToolbarNlp ? 'Hide query' : 'Ask'}
+                  <ThrottleLabsLogo variant="compact" showDomain className="rc-toolbar-logo" />
+                </button>
+                <RaceIdentityPill identity={raceIdentity} className="rc-toolbar-identity-pill min-w-0 flex-1" />
+                <button
+                  type="button"
+                  aria-expanded={controlsExpanded}
+                  aria-controls="structured-controls-panel"
+                  onClick={() => setControlsExpanded((prev) => !prev)}
+                  disabled={loading}
+                  className="rc-toolbar-setup-btn rc-focus inline-flex items-center gap-1.5 rounded-lg border border-[rgba(34,211,238,0.45)] bg-[rgba(34,211,238,0.10)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--rc-cyan)] hover:border-[rgba(34,211,238,0.65)] hover:bg-[rgba(34,211,238,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <SlidersHorizontal size={14} aria-hidden="true" />
+                  <span className="hidden sm:inline">{controlsExpanded ? 'Hide Setup' : 'Race Setup'}</span>
+                  <span className="sm:hidden">{controlsExpanded ? 'Hide' : 'Setup'}</span>
                 </button>
               </div>
 
-              <RaceIdentityPill identity={raceIdentity} />
-
-              <StructuredControls
-                values={structured}
-                setValues={setStructured}
-                onAnalyze={handleStructuredAnalyze}
-                loading={loading}
-                compact
-              />
-
-              {showToolbarNlp && (
-                <CompactNLP
-                  query={query}
-                  setQuery={setQuery}
-                  loading={loading}
-                  onSubmit={handleNaturalLanguageSearch}
-                  placeholder="Ask a natural-language racing question..."
-                />
+              {controlsExpanded && (
+                <div id="structured-controls-panel">
+                  <StructuredControls
+                    values={structured}
+                    setValues={setStructured}
+                    onAnalyze={handleStructuredAnalyze}
+                    loading={loading}
+                    compact
+                  />
+                </div>
               )}
             </div>
           </header>
